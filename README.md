@@ -87,6 +87,6 @@ The record format is `hive.agent-action/1`. The spec is in `spec/SPEC.md` and th
 
 ## Limits
 
-A record proves what the runtime reported, in what order, and that it didn't change afterwards. It does not prove an action was right or authorized, and it can't include events the runtime never reported. Lines after the last witnessed seal are protected by your key alone. The scope check only sees what a tool's input names: a host reached by a program the agent starts is not seen. Every line is signed with Ed25519; ML-DSA-65 is optional.
+A record proves what the runtime reported, in what order, and that it didn't change afterwards. It does not prove an action was right or authorized, and it can't include events the runtime never reported. The plugin keeps its keys on the same machine as the agent, so an agent with shell access could read them. Lines after the last witnessed seal rest on those keys alone. The scope check only sees what a tool's input names: a host reached by a program the agent starts is not seen. Every line is signed with Ed25519; ML-DSA-65 is optional.
 
 MIT licensed. Hive, https://thehiveryiq.com

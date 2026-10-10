@@ -177,7 +177,7 @@ The reference checker exits 0 when every gate passes and nothing fell outside th
 ## Limits
 
 - The record is only as complete as the runtime's hooks. Events the runtime does not report are not recorded.
-- Someone holding the recorder key can write a new, consistent record from scratch. A witness statement catches that for everything up to the witnessed seal. Lines after the last witnessed seal are protected by the recorder key alone.
+- Someone holding the recorder key can write a new, consistent record from scratch. A witness statement catches that for everything up to the witnessed seal. Lines after the last witnessed seal are protected by the recorder key alone. A producer that keeps its keys where the agent can read them (the Claude Code plugin does) gets no protection for those lines from an agent with shell access.
 - The recorder clock is the machine's clock. The witness clock is the witness's.
 - When Hive runs the witness, Hive holds the witness key. It is a second party to the customer, not an independent auditor. An organization can run its own witness from `witness/server.mjs`, or use one run by an auditor.
 - Every line is signed with Ed25519. The ML-DSA-65 signature is optional. The witness signs with Ed25519 only.
