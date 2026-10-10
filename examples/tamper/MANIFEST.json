@@ -1,0 +1,72 @@
+[
+  {
+    "id": "refund-call-deleted",
+    "what": "The refund attempt is deleted from the record",
+    "expected": "CHAIN_ORDER",
+    "got": "CHAIN_ORDER",
+    "why": "expected seq 7, found 8"
+  },
+  {
+    "id": "failure-rewritten",
+    "what": "The failed test run is edited to look like success",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 4 changed after it was signed"
+  },
+  {
+    "id": "tool-renamed",
+    "what": "A Bash call is relabelled as a harmless Read",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 7 changed after it was signed"
+  },
+  {
+    "id": "time-moved",
+    "what": "A tool call's time is moved earlier",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 7 changed after it was signed"
+  },
+  {
+    "id": "lines-swapped",
+    "what": "Two tool calls swap places",
+    "expected": "CHAIN_ORDER",
+    "got": "CHAIN_ORDER",
+    "why": "expected seq 3, found 4"
+  },
+  {
+    "id": "fingerprint-swapped",
+    "what": "The refund's input fingerprint is replaced with a harmless one",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 7 changed after it was signed"
+  },
+  {
+    "id": "signature-forged",
+    "what": "A line is re-signed with a different key but keeps the original key id",
+    "expected": "SIGNATURE",
+    "got": "SIGNATURE",
+    "why": "line 2 signature does not verify"
+  },
+  {
+    "id": "seal-moved",
+    "what": "A seal is edited to cover fewer lines",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 11 changed after it was signed"
+  },
+  {
+    "id": "rewritten-dropped-refund",
+    "what": "Whole record rebuilt and re-signed with the recorder's own key, refund removed",
+    "expected": "WITNESS",
+    "got": "WITNESS",
+    "why": "the witness saw 11 lines ending in addff4cf18de, and this record no longer has that"
+  },
+  {
+    "id": "rewritten-other-key",
+    "what": "Whole record rebuilt and signed with a different key",
+    "expected": "KEY_PIN",
+    "got": "KEY_PIN",
+    "why": "record was signed by a key other than the pinned one"
+  }
+]
