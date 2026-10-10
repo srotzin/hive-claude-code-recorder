@@ -8,7 +8,8 @@ import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { verifyFile } from "../plugins/hive-recorder/scripts/verify.mjs";
-import { canon, body } from "../plugins/hive-recorder/scripts/core.mjs";
+import { canon, body, verifyRecord } from "../plugins/hive-recorder/scripts/core.mjs";
+import { c as nodeCrypto } from "../plugins/hive-recorder/scripts/verify.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const REC = path.join(ROOT, "plugins/hive-recorder/scripts/record.mjs");
@@ -122,6 +123,13 @@ check("witness: a statement signed later than allowed is rejected (a record rebu
 const nows = verifyFile(wrec, { witness: wrec + ".none", requireWitness: true });
 check("witness: a record handed over without its statements fails when witnessing is required", !nows.ok && nows.first_failure.gate === "WITNESS");
 check("timestamp: RFC 3161 tokens from a public authority verify with openssl and cover heads in the chain", wr.gates.TIMESTAMP === "PASS" && wr.timestamps.length >= 1, JSON.stringify(wr.timestamps) + " " + nlines(tfile));
+{
+  // A timestamp whose authority time is an hour from the line it covers: what fresh tokens on a back-dated rebuild look like.
+  const L = fs.readFileSync(wrec, "utf8").trim().split("\n").map(l => JSON.parse(l));
+  const fake = [{ count: 3, head: L[2].hash, ok: true, tsa: "test", gen_time: new Date(Date.parse(L[2].t) + 3600e3).toISOString() }];
+  const r = verifyRecord(L, nodeCrypto, { timestamps: fake, maxLagSec: 10 });
+  check("timestamp: an authority time far from the line's own time is rejected at TIMESTAMP", !r.ok && r.first_failure.gate === "TIMESTAMP", r.first_failure && r.first_failure.why);
+}
 srv2.kill();
 const bad = await fetch("http://127.0.0.1:18787/v1/witness", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recorder_key: "x".repeat(43), session_fp: "0".repeat(64), count: 3, head: "0".repeat(64), prompt: "hello" }) });
 check("witness refuses any field beyond the four fingerprints", bad.status === 400);

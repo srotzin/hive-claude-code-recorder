@@ -21,7 +21,7 @@ import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const c = {
+export const c = {
   sha256hex: s => crypto.createHash("sha256").update(s).digest("hex"),
   verify: (pub, msg, sig) => {
     try { return crypto.verify(null, Buffer.from(msg), crypto.createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: pub }, format: "jwk" }), Buffer.from(sig, "base64url")); }
