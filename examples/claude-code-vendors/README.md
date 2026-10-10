@@ -18,4 +18,4 @@ node $V answer copies/session-1.market-data.jsonl --text answer-1.txt
 node $V statement copies/statement.market-data.json copies/session-1.market-data.jsonl copies/session-2.market-data.jsonl --ask-witness --key key.json --vendor-key copies/vendor-key.market-data.json
 ```
 
-`tamper/` holds 14 changed copies, built by `tests/vendor-tamper.mjs`: four hiding tricks in a vendor's copy, three across the two vendors, three on the answer trail and four on the statement. Every one is rejected, eight of them only because the witness remembers.
+`tamper/` holds 14 changed copies, built by `tests/vendor-tamper.mjs`: four hiding tricks in a vendor's copy, three across the two vendors, three on the answer trail and four on the statement. Every one is rejected, six of them only because the witness remembers.
