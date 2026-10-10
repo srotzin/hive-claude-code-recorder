@@ -72,7 +72,9 @@ export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATU
 //               requireFullCoverage: every line, up to the last, must be covered by a statement,
 //               timestamps: [{ count, head, ok, gen_time, tsa }] RFC 3161 tokens already checked by the caller,
 //               requireTimestamp: no timestamp is a failure, not NONE,
-//               requireEnd: the record must finish with SessionEnd and a seal }
+//               requireEnd: the record must finish with SessionEnd and a seal,
+//               memory: { statements, from } fetched from the witness for this session,
+//               requireMemory: the witness must remember this session }
 export function verifyRecord(lines, c, opts = {}) {
   const res = { ok: false, gates: {}, first_failure: null, entries: lines.length, summary: null };
   const fail = (g, why) => { if (!res.first_failure) res.first_failure = { gate: g, why }; res.gates[g] = "FAIL"; };
@@ -151,7 +153,11 @@ export function verifyRecord(lines, c, opts = {}) {
   } else res.gates.ADMISSION = "NONE";
 
   // WITNESS: each statement must sign a head that is in this chain at that count.
-  const ws = opts.witnesses || [];
+  // With memory (statements fetched from the witness itself), every statement the witness remembers
+  // for this session must hold against this record, not only the ones whoever handed it over chose to include.
+  const mem = opts.memory ? opts.memory.statements || [] : null;
+  const seenSig = new Set();
+  const ws = [...(opts.witnesses || []), ...(mem || [])].filter(w => w && !seenSig.has(w.sig) && seenSig.add(w.sig));
   const pins = [...(opts.witnessPins || []), ...(opts.witnessPin ? [opts.witnessPin] : [])];
   res.witnessed = [];
   const seenKeys = new Set();
@@ -163,7 +169,8 @@ export function verifyRecord(lines, c, opts = {}) {
     if (st.recorder_key !== pub) { fail("WITNESS", "witness statement names another recorder key"); break; }
     if (!c.verify(st.witness_key, canon(st), sig)) { fail("WITNESS", "witness signature does not verify"); break; }
     const covered = lines[st.count - 1];
-    if (!covered || covered.hash !== st.head) {
+    if (!covered) { fail("WITNESS", "the witness saw " + st.count + " lines for this session, and this record has only " + lines.length); break; }
+    if (covered.hash !== st.head) {
       fail("WITNESS", "the witness saw " + st.count + " lines ending in " + st.head.slice(0, 12) + ", and this record no longer has that"); break;
     }
     const lag = (Date.parse(st.witnessed_at) - Date.parse(covered.t)) / 1000;
@@ -175,9 +182,11 @@ export function verifyRecord(lines, c, opts = {}) {
     if (st.count > maxCount) maxCount = st.count;
     res.witnessed.push({ count: st.count, at: st.witnessed_at, by: st.witness_key, lag_s: Math.round(lag * 10) / 10 });
   }
+  if (mem) res.witness_memory = { remembered: mem.length, max_count: mem.reduce((a, w) => Math.max(a, w.count || 0), 0), from: opts.memory.from };
   res.witness_coverage = { lines_witnessed: maxCount, entries: lines.length, unwitnessed_tail: lines.length - maxCount, witnesses: seenKeys.size, max_lag_s: Math.round(maxLag * 10) / 10 };
   if (res.gates.WITNESS !== "FAIL") {
-    if (!ws.length) { if (opts.requireWitness || opts.minWitnesses) fail("WITNESS", "no witness statements were supplied, and this check requires them"); else res.gates.WITNESS = "NONE"; }
+    if (mem && !mem.length && opts.requireMemory) fail("WITNESS", "the witness has no memory of this session");
+    else if (!ws.length) { if (opts.requireWitness || opts.minWitnesses) fail("WITNESS", "no witness statements were supplied, and this check requires them"); else res.gates.WITNESS = "NONE"; }
     else if (opts.minWitnesses && seenKeys.size < opts.minWitnesses) fail("WITNESS", "only " + seenKeys.size + " different witnesses signed, and this check requires " + opts.minWitnesses);
     else if (opts.requireFullCoverage && maxCount < lines.length) fail("WITNESS", "the last " + (lines.length - maxCount) + " lines were never witnessed");
     else pass("WITNESS");

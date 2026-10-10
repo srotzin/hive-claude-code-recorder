@@ -238,6 +238,48 @@ srv.kill();
   check("median hook time with ML-DSA-65 under 400 ms", ptimes[4] < 400, `median ${ptimes[4].toFixed(0)} ms`);
 }
 
+// 10. Witness memory (needs Postgres: HIVE_TEST_PG=postgres://user:pass@host/db). The witness keeps every
+// statement it signs and a reviewer asks it directly, so withholding or rebuilding afterwards is caught.
+if (process.env.HIVE_TEST_PG) {
+  const { fetchMemory } = await import("../plugins/hive-recorder/scripts/verify.mjs");
+  const mseed = crypto.randomBytes(32).toString("hex");
+  const ms = spawn(process.execPath, [path.join(ROOT, "witness/server.mjs")], { env: { ...process.env, PORT: "18789", WITNESS_ED25519_SEED: mseed, DATABASE_URL: process.env.HIVE_TEST_PG, DATABASE_SSL: "off" }, stdio: ["ignore", "pipe", "pipe"] });
+  await new Promise(r => ms.stdout.once("data", r));
+  const MU = "http://127.0.0.1:18789";
+  const MW = tmp("hive-mem-"), MS = "mem-" + crypto.randomUUID();
+  const mev = events.slice(0, 10);
+  for (const ev of mev) spawnSync(process.execPath, [REC], { input: JSON.stringify({ ...ev, session_id: MS }), env: { ...process.env, HIVE_RECORDER_DIR: MW, HIVE_WITNESS_URL: MU + "/v1/witness", HIVE_TSA_URL: "off", HIVE_WITNESS_WAIT_MS: "3000" } });
+  const mrec = path.join(MW, "records", MS + ".jsonl");
+  const ml = fs.readFileSync(mrec, "utf8").trim().split("\n").map(l => JSON.parse(l));
+  const mkey = (await (await fetch(MU + "/v1/witness/key")).json()).witness_key;
+  const mem = await fetchMemory(ml, MU);
+  const local = fs.readFileSync(mrec.replace(/\.jsonl$/, ".witness.jsonl"), "utf8").trim().split("\n").length;
+  check("memory: the witness remembers every statement it signed for the session", mem.statements.length === local && local >= 3, mem.statements.length + " remembered, " + local + " saved locally");
+  const ok1 = verifyFile(mrec, { witness: mrec + ".none", witnessKey: mkey, memory: mem, requireMemory: true, fullCoverage: true, maxLag: 10 });
+  check("memory: a record handed over with no statements at all passes against what the witness remembers", ok1.ok && ok1.witness_coverage.unwitnessed_tail === 0, JSON.stringify(ok1.first_failure));
+  const cut = mrec.replace(/\.jsonl$/, ".cut.jsonl");
+  fs.writeFileSync(cut, ml.slice(0, ml.length - 3).map(l => JSON.stringify(l)).join("\n") + "\n");
+  const r2 = verifyFile(cut, { witness: mrec + ".none", witnessKey: mkey, memory: mem, requireMemory: true });
+  check("memory: the end cut off, statements withheld: rejected, the witness remembers more lines", !r2.ok && r2.first_failure.gate === "WITNESS" && /has only/.test(r2.first_failure.why), r2.first_failure && r2.first_failure.why);
+  const msk = crypto.createPrivateKey(fs.readFileSync(path.join(MW, "keys/recorder-ed25519.pem")));
+  const drop = ml.findIndex(l => l.event === "PreToolUse");
+  const rebuilt = (() => { let prev = "0".repeat(64); return ml.filter((l, i) => i !== drop && i !== drop + 1).map((l, i) => { const b = { ...body(l), seq: i, prev }; if (b.event === "Seal") { b.count = i; b.head = prev; } const cc = canon(b); const h = crypto.createHash("sha256").update(cc).digest("hex"); prev = h; return { ...b, hash: h, sig: crypto.sign(null, Buffer.from(cc), msk).toString("base64url") }; }); })();
+  const rb = mrec.replace(/\.jsonl$/, ".rebuilt.jsonl");
+  fs.writeFileSync(rb, rebuilt.map(l => JSON.stringify(l)).join("\n") + "\n");
+  // Ask the witness for fresh statements on the rebuilt heads, as a lab could, and hand only those over.
+  const fresh = [];
+  for (const l of rebuilt.filter(l => ["SessionStart", "PreToolUse", "Seal"].includes(l.event))) fresh.push(await (await fetch(MU + "/v1/witness", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recorder_key: rebuilt[0].public_key, session_fp: crypto.createHash("sha256").update(MS).digest("hex"), count: l.seq + 1, head: l.hash }) })).json());
+  fs.writeFileSync(rb.replace(/\.jsonl$/, ".witness.jsonl"), fresh.map(x => JSON.stringify(x)).join("\n") + "\n");
+  const r3a = verifyFile(rb, { witnessKey: mkey });
+  const r3 = verifyFile(rb, { witnessKey: mkey, memory: await fetchMemory(rebuilt, MU), requireMemory: true });
+  check("memory: a call deleted, re-signed, fresh statements obtained: passes on its own statements, rejected once the witness is asked", r3a.ok && !r3.ok && r3.first_failure.gate === "WITNESS", r3.first_failure && r3.first_failure.why);
+  const r4 = verifyFile(mrec, { memory: { statements: [], from: MU }, requireMemory: true });
+  check("memory: a session the witness never saw fails when memory is required", !r4.ok && /no memory/.test(r4.first_failure.why));
+  const bad = await fetch(MU + "/v1/witness/statements?recorder_key=x&session_fp=y");
+  check("memory: the witness only answers for a full recorder key and session fingerprint", bad.status === 400);
+  ms.kill();
+} else console.log("skip witness memory tests (set HIVE_TEST_PG)");
+
 // 9. Service mode: recorderd holds the keys and the record; the hook holds only the fingerprint key.
 {
   const RD = tmp("hive-rd-"), HD = tmp("hive-hook-"), SS = "svc-" + crypto.randomUUID();

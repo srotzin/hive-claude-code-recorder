@@ -204,6 +204,17 @@ The token's message imprint is SHA-256 with the head's 32 bytes as the hashed me
 
 `recorderd.mjs` runs the recorder as a small service, under a different user, in a sidecar or on the host that starts the sandbox. The hook keeps only the fingerprint key and sends a description (event, names, fingerprints, sizes, touched paths and hosts). recorderd refuses any other field. It holds the signing keys and the record, reads the admission from a file the agent can't edit, and calls the witnesses and timestamp authorities itself. The agent can add lines through the hook. It can't change, reorder or remove one.
 
+### Witness memory
+
+A witness may keep every statement it signs and serve them back:
+
+```
+GET /v1/witness/statements?recorder_key=<43 base64url>&session_fp=<64 hex>
+{ "format": "hive.agent-action-witness/1", "witness_key": "...", "statements": [ ...each exactly as signed... ] }
+```
+
+It stores the same four fingerprints it was sent, its own time, its key and its signature. Nothing else. A checker that asks (`--ask-witness`) checks the record against every remembered statement, not only the ones handed over. A record cut short, or rebuilt with a call removed and fresh statements obtained afterwards, fails, because the witness still holds the original heads. A session the witness has no memory of fails when memory is required.
+
 ### Strict checking
 
 `--strict` turns on all of: statements required, every line covered, lag at most 10 seconds, a timestamp required, and the record must end with `SessionEnd` and a seal. A reviewer who wasn't there should check with `--strict`.
@@ -212,7 +223,7 @@ The token's message imprint is SHA-256 with the head's 32 bytes as the hashed me
 
 - The record is only as complete as the runtime's hooks. Events the runtime does not report are not recorded.
 - Someone holding the recorder key can write a new, consistent record from scratch. Witness statements catch that for every line they cover, and with witnessing before every call that is every line. In plugin mode the keys sit on the agent's machine. In service mode they don't.
-- The witness keeps nothing in version 1.2, so its statements travel with the record. A checker that requires them (`--strict`) fails a record handed over without them. A record fully rebuilt later, with fresh statements and fresh times, has to carry the time it was really rebuilt: the public timestamps' times must sit within the lag of each covered line. It is caught by anyone who knows when the session really ran, or by a witness that remembers what it signed.
+- A witness without memory keeps nothing, so its statements travel with the record. A checker that requires them (`--strict`) fails a record handed over without them. A record fully rebuilt later, with fresh statements and fresh times, has to carry the time it was really rebuilt: the public timestamps' times must sit within the lag of each covered line. It is caught by anyone who knows when the session really ran, or by a witness that remembers what it signed.
 - The recorder clock is the machine's clock. The witness clock is the witness's. A timestamp authority's clock is its own, and is the only one no party to the session controls.
 - When Hive runs the witness, Hive holds the witness key. It is a second party to the customer, not an independent auditor. An organization can run its own witness from `witness/server.mjs`, or use one run by an auditor.
 - Every line is signed with Ed25519. The ML-DSA-65 signature is optional. The witness signs with Ed25519 only.
