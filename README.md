@@ -63,6 +63,28 @@ Your own key can't stop you from rewriting your own record. A witness can. At ea
 
 The default witness is Hive's, at `https://witness.thehiveryiq.com/v1/witness`. Hive holds that witness key, so it is a second party to you, not an independent auditor. Set `HIVE_WITNESS_URL` to use your own witness or one run by an auditor (`witness/server.mjs`, no dependencies), or to `off` to send nothing.
 
+## Independence: keys outside the agent, many witnesses, public timestamps
+
+Version 1.2 is built so that nobody involved in a session, including Hive, has to be trusted for the record to hold.
+
+- The witness signs at the start, before every tool call runs and at every seal. Set `HIVE_WITNESS_WAIT_MS=2500` to make sure the statement exists before the call runs.
+- `HIVE_WITNESS_URL` takes several witnesses, comma separated. Run your own from `witness/server.mjs`, or have an auditor run one.
+- At the start and at every seal, the head hash goes to a public timestamp authority (DigiCert by default, `HIVE_TSA_URL`). Checking it uses openssl and your system's certificates, no Hive key.
+- `scripts/recorderd.mjs` runs the recorder as a service under another user. The hook keeps only the fingerprint key and sends fingerprints. The agent can add lines. It can't change or remove one, because it never holds the signing keys or the record.
+
+```
+sudo -u hiverec env HIVE_RECORDER_DIR=/var/lib/hive-recorder HIVE_ADMISSION=/etc/hive/admission.json HIVE_PQ=1 HIVE_WITNESS_WAIT_MS=2500 node scripts/recorderd.mjs
+HIVE_RECORDER_URL=http://127.0.0.1:18890 claude
+```
+
+Check strictly. A reviewer who wasn't there should always use `--strict`:
+
+```
+node plugins/hive-recorder/scripts/verify.mjs session.jsonl --key key.json --admission hive-admission.json --witness-key <key> --strict
+```
+
+`examples/claude-code-recorderd/` is a real session recorded this way, with 6 tamper cases aimed at these protections.
+
 ## Rules it keeps
 
 - Always exits 0 and prints nothing, so it can never block, deny or change a tool call. It is not a permission check.
@@ -87,6 +109,6 @@ The record format is `hive.agent-action/1`. The spec is in `spec/SPEC.md` and th
 
 ## Limits
 
-A record proves what the runtime reported, in what order, and that it didn't change afterwards. It does not prove an action was right or authorized, and it can't include events the runtime never reported. The plugin keeps its keys on the same machine as the agent, so an agent with shell access could read them. Lines after the last witnessed seal rest on those keys alone. The scope check only sees what a tool's input names: a host reached by a program the agent starts is not seen. Every line is signed with Ed25519; ML-DSA-65 is optional.
+A record proves what the runtime reported, in what order, and that it didn't change afterwards. It does not prove an action was right or authorized, and it can't include events the runtime never reported. In plugin mode the keys sit on the agent's machine; in service mode they don't. The witness keeps nothing yet, so a record rebuilt from scratch later, with every time faked, is caught by the public timestamps or by knowing when the session ran. The scope check only sees what a tool's input names: a host reached by a program the agent starts is not seen. Every line is signed with Ed25519; ML-DSA-65 is optional.
 
 MIT licensed. Hive, https://thehiveryiq.com

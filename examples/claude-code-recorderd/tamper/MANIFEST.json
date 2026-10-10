@@ -1,0 +1,50 @@
+[
+  {
+    "id": "escape-deleted-resigned",
+    "file": "escape-deleted-resigned.jsonl",
+    "what": "The Hugging Face call is deleted and every line re-signed with both of the recorder's keys. The original witness statements are kept.",
+    "expected": "WITNESS",
+    "got": "WITNESS",
+    "why": "the witness saw 13 lines ending in fbebfc2ec4ed, and this record no longer has that"
+  },
+  {
+    "id": "statements-withheld",
+    "file": "statements-withheld.jsonl",
+    "what": "The same rewrite, handed over without any witness statements.",
+    "expected": "WITNESS",
+    "got": "WITNESS",
+    "why": "no witness statements were supplied, and this check requires them"
+  },
+  {
+    "id": "fresh-statements-later",
+    "file": "fresh-statements-later.jsonl",
+    "what": "The same rewrite, with brand new witness statements requested from the witness afterwards.",
+    "expected": "WITNESS",
+    "got": "WITNESS",
+    "why": "line 2 was witnessed 115 s after it was written, more than the 10 s allowed"
+  },
+  {
+    "id": "timestamps-withheld",
+    "file": "timestamps-withheld.jsonl",
+    "what": "The record and witness statements untouched, the public timestamps left out.",
+    "expected": "TIMESTAMP",
+    "got": "TIMESTAMP",
+    "why": "no timestamp tokens were supplied, and this check requires them"
+  },
+  {
+    "id": "timestamp-moved",
+    "file": "timestamp-moved.jsonl",
+    "what": "A DigiCert token is relabelled to cover a different line.",
+    "expected": "TIMESTAMP",
+    "got": "TIMESTAMP",
+    "why": "the timestamp token for line 3 does not verify: 40570413C27F0000:error:17800067:time stamp routines:ts_check_imprints:message imprint mismatch:../crypto/ts/ts_rsp_verify.c:508:"
+  },
+  {
+    "id": "tail-dropped",
+    "file": "tail-dropped.jsonl",
+    "what": "The last seal and session end are cut off, so the end of the session is not shown.",
+    "expected": "SEAL",
+    "got": "SEAL",
+    "why": "the record stops before the session ended: it must finish with SessionEnd and a seal"
+  }
+]

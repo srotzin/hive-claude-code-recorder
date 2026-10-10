@@ -4,7 +4,7 @@
 // that starts the agent's sandbox. Point the hook at it with HIVE_RECORDER_URL.
 //
 //   HIVE_RECORDER_DIR=/var/lib/hive-recorder HIVE_ADMISSION=/etc/hive/admission.json \
-//   HIVE_RECORDERD_PORT=8790 node recorderd.mjs
+//   HIVE_RECORDERD_PORT=18890 node recorderd.mjs
 //
 // It accepts one thing: a described event (fingerprints, sizes, tool names, touched paths and hosts).
 // It never accepts or stores prompts, tool input, tool output or file content. The admission is
@@ -53,8 +53,11 @@ http.createServer((req, res) => {
     const bad = check(b); if (bad) return send(res, 400, { error: bad });
     try {
       const r = appendDesc(b.session_id, b.desc, b.touched, { dir, admission });
+      // With HIVE_WITNESS_WAIT_MS set, answer the hook only after the witnesses have signed (or the wait
+      // runs out), so a statement exists before the tool call runs. Without it, witness in the background.
+      if (Number(process.env.HIVE_WITNESS_WAIT_MS || 0) > 0) await sendOutside(outsideJob(r)).catch(() => {});
       send(res, 200, { ok: true, seq: r.last.seq });
-      sendOutside(outsideJob(r)).catch(() => {});
+      if (!(Number(process.env.HIVE_WITNESS_WAIT_MS || 0) > 0)) sendOutside(outsideJob(r)).catch(() => {});
     } catch (e) { send(res, 500, { error: "could not append" }); }
   });
-}).listen(Number(process.env.HIVE_RECORDERD_PORT || 8790), process.env.HIVE_RECORDERD_HOST || "127.0.0.1", () => console.log("hive-recorderd on", process.env.HIVE_RECORDERD_PORT || 8790, admission ? "with admission" : "without admission"));
+}).listen(Number(process.env.HIVE_RECORDERD_PORT || 18890), process.env.HIVE_RECORDERD_HOST || "127.0.0.1", () => console.log("hive-recorderd on", process.env.HIVE_RECORDERD_PORT || 18890, admission ? "with admission" : "without admission"));

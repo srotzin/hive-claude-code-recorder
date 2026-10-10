@@ -4,6 +4,7 @@
 //   node verify.mjs <session.jsonl> [--key <key.json | public key>] [--witness <file>] [--witness-key <key>]...
 //                   [--min-witnesses <n>] [--max-lag <seconds>] [--require-witness] [--full-coverage]
 //                   [--timestamps <file>] [--require-timestamp] [--admission <policy.json>] [--json]
+//   --strict turns on --require-witness --full-coverage --require-timestamp --require-end and --max-lag 10.
 //   --witness-key can be given more than once. --min-witnesses counts different pinned witnesses.
 //   Timestamp tokens (RFC 3161) are checked with the openssl command and your system's CA certificates.
 //   node verify.mjs reveal <session.jsonl> --seq <n> --field <input|response|error|prompt|last_message> --value <file> --fingerprint-key <file>
@@ -36,7 +37,7 @@ const readLines = f => fs.readFileSync(f, "utf8").split("\n").filter(Boolean).ma
 const keyArg = v => { if (!v) return undefined; if (fs.existsSync(v)) { const j = JSON.parse(fs.readFileSync(v, "utf8")); return j.public_key || j.witness_key; } return v; };
 function opt(args, name) { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; }
 function opts(args, name) { return args.flatMap((a, i) => a === name && args[i + 1] ? [args[i + 1]] : []); }
-const FLAGS = new Set(["--json", "--require-witness", "--full-coverage", "--require-timestamp"]);
+const FLAGS = new Set(["--json", "--require-witness", "--full-coverage", "--require-timestamp", "--require-end", "--strict"]);
 
 // Check RFC 3161 timestamp tokens with openssl: the token must be signed by a TSA certificate that
 // chains to a CA your system trusts, and must cover exactly this head hash.
@@ -59,7 +60,7 @@ export function checkTimestamps(entries, caFile) {
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }
 
-export function verifyFile(file, { key, witness, witnessKey, witnessKeys, minWitnesses, maxLag, requireWitness, fullCoverage, timestamps, requireTimestamp, caFile, admission } = {}) {
+export function verifyFile(file, { key, witness, witnessKey, witnessKeys, minWitnesses, maxLag, requireWitness, fullCoverage, timestamps, requireTimestamp, requireEnd, caFile, admission } = {}) {
   const lines = readLines(file);
   const wf = witness || file.replace(/\.jsonl$/, ".witness.jsonl");
   const witnesses = fs.existsSync(wf) && wf !== file ? readLines(wf) : [];
@@ -69,7 +70,7 @@ export function verifyFile(file, { key, witness, witnessKey, witnessKeys, minWit
   const pins = [...(witnessKeys || []), ...(witnessKey ? [witnessKey] : [])].map(keyArg);
   return verifyRecord(lines, c, {
     pin: keyArg(key), witnesses, witnessPins: pins, minWitnesses, maxLagSec: maxLag, requireWitness, requireFullCoverage: fullCoverage,
-    timestamps: ts, requireTimestamp,
+    timestamps: ts, requireTimestamp, requireEnd,
     admissionPin: pol ? c.sha256hex(canon(pol)) : undefined, admissionScope: pol ? scopeOf(pol) : undefined,
   });
 }
@@ -90,16 +91,17 @@ function main() {
   const args = process.argv.slice(2);
   if (args[0] === "reveal") return reveal(args);
   const files = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--") && !FLAGS.has(args[i - 1])));
-  if (!files.length) { console.log("usage: node verify.mjs <session.jsonl> [--key key.json] [--witness-key key]... [--min-witnesses n] [--max-lag s] [--require-witness] [--full-coverage] [--require-timestamp] [--admission policy.json] [--json]"); process.exitCode = 2; return; }
+  if (!files.length) { console.log("usage: node verify.mjs <session.jsonl> [--key key.json] [--witness-key key]... [--min-witnesses n] [--max-lag s] [--require-witness] [--full-coverage] [--require-timestamp] [--require-end] [--strict] [--admission policy.json] [--json]"); process.exitCode = 2; return; }
   let bad = 0, outside = 0;
   for (const f of files) {
     let r;
     try { r = verifyFile(f, {
       key: opt(args, "--key"), witness: opt(args, "--witness"), witnessKeys: opts(args, "--witness-key"),
       minWitnesses: opt(args, "--min-witnesses") ? Number(opt(args, "--min-witnesses")) : undefined,
-      maxLag: opt(args, "--max-lag") ? Number(opt(args, "--max-lag")) : undefined,
-      requireWitness: args.includes("--require-witness"), fullCoverage: args.includes("--full-coverage"),
-      timestamps: opt(args, "--timestamps"), requireTimestamp: args.includes("--require-timestamp"), caFile: opt(args, "--ca-file"),
+      maxLag: opt(args, "--max-lag") ? Number(opt(args, "--max-lag")) : args.includes("--strict") ? 10 : undefined,
+      requireWitness: args.includes("--require-witness") || args.includes("--strict"), fullCoverage: args.includes("--full-coverage") || args.includes("--strict"),
+      timestamps: opt(args, "--timestamps"), requireTimestamp: args.includes("--require-timestamp") || args.includes("--strict"), caFile: opt(args, "--ca-file"),
+      requireEnd: args.includes("--require-end") || args.includes("--strict"),
       admission: opt(args, "--admission"),
     });  }
     catch (e) { r = { ok: false, gates: { FORMAT: "FAIL" }, first_failure: { gate: "FORMAT", why: String(e.message) } }; }

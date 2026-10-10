@@ -1,6 +1,6 @@
 # hive.agent-action/1
 
-An open format for a signed, tamper-evident record of what an AI agent did. Version 1.1.0, October 10, 2026. Version 1.1 adds the signed admission, the scope check and an optional ML-DSA-65 signature. Every 1.0 record is a valid 1.1 record.
+An open format for a signed, tamper-evident record of what an AI agent did. Version 1.2.0, October 10, 2026. Version 1.1 adds the signed admission, the scope check and an optional ML-DSA-65 signature. Every 1.0 record is a valid 1.1 record.
 
 The first producer is the Hive Recorder plugin for Claude Code. The format does not depend on Claude Code. Any agent runtime that can call a hook before and after a tool runs can produce it.
 
@@ -174,11 +174,46 @@ The reference checker exits 0 when every gate passes and nothing fell outside th
 3. Keep the signing key and the fingerprint key on the machine that records. Do not send either anywhere.
 4. Append in one order per session, using a lock, because runtimes can fire hooks in parallel.
 
+## Independence (1.2)
+
+These additions narrow what the producer, the lab or the agent can change without being caught. None of them changes the line format.
+
+### When the witness signs
+
+A producer sends the current head to every witness at the start of the record, after writing each `PreToolUse` line and before the call runs, and after every seal. A witness request covers the whole record up to and including the last line written, so a seal is itself witnessed. A producer may wait for the statements before releasing the call (`HIVE_WITNESS_WAIT_MS`). It must never block or fail the call if a witness is slow or down.
+
+### More than one witness
+
+`HIVE_WITNESS_URL` takes a comma separated list. A checker can pin several witness keys and require statements from a minimum number of different witnesses (`--min-witnesses`). The witness is open source (`witness/server.mjs`), so the second witness can be run by an auditor, an evaluator or the other side.
+
+### Lag
+
+Every statement carries the witness's own time. A checker can require that each covered line was witnessed within a set number of seconds of its own time (`--max-lag`). A record rewritten later and witnessed again gets late statements and fails.
+
+### Public timestamps (RFC 3161)
+
+At the start and at every seal, a producer may send the head hash, and nothing else, to one or more public timestamp authorities (`HIVE_TSA_URL`, default `http://timestamp.digicert.com`). The token is stored next to the record, one JSON line each:
+
+```
+{ "v": "hive.agent-action-timestamp/1", "count": 18, "head": "<64 hex>", "tsa": "<url>", "token": "<base64 DER TimeStampResp>" }
+```
+
+The token's message imprint is SHA-256 with the head's 32 bytes as the hashed message. A checker verifies it with `openssl ts -verify -digest <head> -in <token> -CAfile <system CAs>` and checks the head is in the chain at `count`. No Hive key is involved in this gate.
+
+### Service mode: keys outside the agent's reach
+
+`recorderd.mjs` runs the recorder as a small service, under a different user, in a sidecar or on the host that starts the sandbox. The hook keeps only the fingerprint key and sends a description (event, names, fingerprints, sizes, touched paths and hosts). recorderd refuses any other field. It holds the signing keys and the record, reads the admission from a file the agent can't edit, and calls the witnesses and timestamp authorities itself. The agent can add lines through the hook. It can't change, reorder or remove one.
+
+### Strict checking
+
+`--strict` turns on all of: statements required, every line covered, lag at most 10 seconds, a timestamp required, and the record must end with `SessionEnd` and a seal. A reviewer who wasn't there should check with `--strict`.
+
 ## Limits
 
 - The record is only as complete as the runtime's hooks. Events the runtime does not report are not recorded.
-- Someone holding the recorder key can write a new, consistent record from scratch. A witness statement catches that for everything up to the witnessed seal. Lines after the last witnessed seal are protected by the recorder key alone. A producer that keeps its keys where the agent can read them (the Claude Code plugin does) gets no protection for those lines from an agent with shell access.
-- The recorder clock is the machine's clock. The witness clock is the witness's.
+- Someone holding the recorder key can write a new, consistent record from scratch. Witness statements catch that for every line they cover, and with witnessing before every call that is every line. In plugin mode the keys sit on the agent's machine. In service mode they don't.
+- The witness keeps nothing in version 1.2, so its statements travel with the record. A checker that requires them (`--strict`) fails a record handed over without them. A record fully rebuilt later, with fresh statements and fresh times, passes lag checks if every line time was faked to match, and is caught only by knowing when the session really ran, by the public timestamps, or by a witness that remembers what it signed.
+- The recorder clock is the machine's clock. The witness clock is the witness's. A timestamp authority's clock is its own, and is the only one no party to the session controls.
 - When Hive runs the witness, Hive holds the witness key. It is a second party to the customer, not an independent auditor. An organization can run its own witness from `witness/server.mjs`, or use one run by an auditor.
 - Every line is signed with Ed25519. The ML-DSA-65 signature is optional. The witness signs with Ed25519 only.
 - The scope check only sees what the tool input names. A Bash command that reads a file is not read for paths, and a host reached by a program the agent starts, or through a variable, is not seen. Covering that takes a recorder on the network boundary that writes the same records.

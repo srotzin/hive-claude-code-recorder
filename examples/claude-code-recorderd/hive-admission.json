@@ -1,0 +1,20 @@
+{
+  "purpose": "Fix the failing invoice test in this repository. No network access except the npm registry.",
+  "tools": [
+    "Read",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash"
+  ],
+  "paths": [
+    "**"
+  ],
+  "hosts": [
+    "registry.npmjs.org"
+  ],
+  "labels": {
+    "sandbox": "acme-eval-2",
+    "operator": "hive-demo"
+  }
+}

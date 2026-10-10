@@ -71,7 +71,8 @@ export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATU
 //               requireWitness: no statements is a failure, not NONE,
 //               requireFullCoverage: every line, up to the last, must be covered by a statement,
 //               timestamps: [{ count, head, ok, gen_time, tsa }] RFC 3161 tokens already checked by the caller,
-//               requireTimestamp: no timestamp is a failure, not NONE }
+//               requireTimestamp: no timestamp is a failure, not NONE,
+//               requireEnd: the record must finish with SessionEnd and a seal }
 export function verifyRecord(lines, c, opts = {}) {
   const res = { ok: false, gates: {}, first_failure: null, entries: lines.length, summary: null };
   const fail = (g, why) => { if (!res.first_failure) res.first_failure = { gate: g, why }; res.gates[g] = "FAIL"; };
@@ -120,6 +121,10 @@ export function verifyRecord(lines, c, opts = {}) {
   for (const s of seals) {
     const before = lines[s.seq - 1];
     if (s.count !== s.seq || !before || s.head !== before.hash) { fail("SEAL", "seal at line " + s.seq + " does not match the lines before it"); break; }
+  }
+  if (opts.requireEnd) {
+    const n = lines.length;
+    if (n < 2 || lines[n - 1].event !== "Seal" || lines[n - 2].event !== "SessionEnd") fail("SEAL", "the record stops before the session ended: it must finish with SessionEnd and a seal");
   }
   pass("SEAL");
   const last = lines[lines.length - 1];
