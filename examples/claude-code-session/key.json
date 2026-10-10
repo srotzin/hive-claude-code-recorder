@@ -1,0 +1,7 @@
+{
+  "format": "hive.agent-action/1",
+  "alg": "Ed25519",
+  "public_key": "-NqV3QjXAK-ddwiXDsrXExmfTjWRXTN5yeLFhLcii0w",
+  "key_id": "5116b73bad11d463",
+  "note": "Recorder public key. Give this to whoever will check your records. The private key never leaves this machine."
+}

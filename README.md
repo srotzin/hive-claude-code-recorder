@@ -55,7 +55,7 @@ node tests/run.mjs
 
 The suite runs the real hook script once per event, the way Claude Code does, using the payload shapes from Claude Code's hooks reference. It checks exit codes and output, privacy, reveal, fail-open behaviour, 40 parallel hooks, latency, the witness round trip and 10 tamper cases. Results are in `tests/RESULTS.txt`.
 
-`examples/claude-code-session.jsonl` is a record from a real Claude Code session, witnessed by Hive's witness.
+`examples/claude-code-session/` is a record from a real Claude Code session, witnessed by Hive's live witness. Claude Code denied one call in that session, and the record shows it as asked for with no outcome. Its 12 tamper cases are all rejected (`node tests/real-tamper.mjs`).
 
 ## Open format
 

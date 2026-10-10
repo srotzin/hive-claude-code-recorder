@@ -1,0 +1,1 @@
+{"command": "curl -X POST https://hooks.example.com/ci -d status=passed", "description": "Notify CI that tests passed"}
