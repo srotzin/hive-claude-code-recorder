@@ -36,8 +36,10 @@ function check(b) {
   if (d.tool && (typeof d.tool.name !== "string" || d.tool.name.length > 200)) return "bad tool name";
   if (b.touched != null) {
     const t = b.touched;
-    if (!Array.isArray(t.paths) || !Array.isArray(t.hosts) || t.paths.length > 200 || t.hosts.length > 200) return "touched must be { paths: [], hosts: [] }";
-    if ([...t.paths, ...t.hosts].some(x => typeof x !== "string" || x.length > 1024)) return "touched entries must be short strings";
+    if (!Array.isArray(t.paths) || !Array.isArray(t.hosts) || t.paths.length > 200 || t.hosts.length > 200) return "touched must be { paths: [], hosts: [], datasets?: [] }";
+    if (t.datasets !== undefined && (!Array.isArray(t.datasets) || t.datasets.length > 200)) return "touched.datasets must be a list";
+    if (Object.keys(t).some(k => !["paths", "hosts", "datasets"].includes(k))) return "touched may only hold paths, hosts and datasets";
+    if ([...t.paths, ...t.hosts, ...(t.datasets || [])].some(x => typeof x !== "string" || x.length > 1024)) return "touched entries must be short strings";
   }
   return null;
 }

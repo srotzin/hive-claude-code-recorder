@@ -47,14 +47,17 @@ export function checkScope(scope, tool, touched) {
     // project) can only match an admitted pattern that is itself absolute.
     paths: (touched.paths || []).filter(p => !(scope.paths || []).some(g => (p[0] === "/") === (g[0] === "/") && globMatch(g, p, "/"))),
     hosts: (touched.hosts || []).filter(h => !any(scope.hosts, h, ".")),
+    // Datasets, feeds and products named in a tool's input (licensed data reached through MCP tools).
+    // Only checked when the admission lists datasets.
+    ...(scope.datasets ? { datasets: (touched.datasets || []).filter(d => !any(scope.datasets, d, ".")) } : {}),
   };
 }
 // The scope an admission policy gives. The recorder and the checker both use this.
 export function scopeOf(p) {
   const list = v => Array.isArray(v) ? v.map(String).sort() : [];
-  return { tools: list(p.tools), paths: list(p.paths), hosts: list(p.hosts).map(h => h.toLowerCase()) };
+  return { tools: list(p.tools), paths: list(p.paths), hosts: list(p.hosts).map(h => h.toLowerCase()), ...(Array.isArray(p.datasets) ? { datasets: list(p.datasets) } : {}) };
 }
-export function isOutside(o) { return !!(o && (o.tool || (o.paths && o.paths.length) || (o.hosts && o.hosts.length))); }
+export function isOutside(o) { return !!(o && (o.tool || (o.paths && o.paths.length) || (o.hosts && o.hosts.length) || (o.datasets && o.datasets.length))); }
 
 export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATURE", "PQ_SIGNATURE", "SEAL", "ADMISSION", "WITNESS", "TIMESTAMP"];
 

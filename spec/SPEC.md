@@ -204,6 +204,10 @@ The token's message imprint is SHA-256 with the head's 32 bytes as the hashed me
 
 `recorderd.mjs` runs the recorder as a small service, under a different user, in a sidecar or on the host that starts the sandbox. The hook keeps only the fingerprint key and sends a description (event, names, fingerprints, sizes, touched paths and hosts). recorderd refuses any other field. It holds the signing keys and the record, reads the admission from a file the agent can't edit, and calls the witnesses and timestamp authorities itself. The agent can add lines through the hook. It can't change, reorder or remove one.
 
+### Datasets
+
+An admission may list `datasets`: globs, with `.` as the separator, for the datasets, feeds or products a session may pull. The recorder reads them from a tool's input fields `dataset`, `dataset_id`, `datasets`, `feed`, `feed_id`, `product` and `product_id`, so licensed data reached through MCP tools is checked the same way as paths and hosts. The record names the dataset. It never holds the data. Admissions without `datasets` are checked exactly as before.
+
 ### Witness memory
 
 A witness may keep every statement it signs and serve them back:

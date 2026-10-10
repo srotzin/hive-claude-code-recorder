@@ -2,6 +2,7 @@
 // one process per event, JSON on stdin, exit code and stdout checked.
 //   node tests/run.mjs
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -236,6 +237,42 @@ srv.kill();
   const lr = verifyFile(lf, { witness: lf + ".none" });
   check("scope check rewritten and fully re-signed with both recorder keys: rejected at ADMISSION", !lr.ok && lr.first_failure.gate === "ADMISSION", lr.first_failure && lr.first_failure.why);
   check("median hook time with ML-DSA-65 under 400 ms", ptimes[4] < 400, `median ${ptimes[4].toFixed(0)} ms`);
+}
+
+// 11. Licensed data through MCP tools: the admission lists datasets, and a pull outside them is flagged.
+{
+  const P = tmp("hive-ds-proj-"), DD = tmp("hive-ds-"), DS = "ds-" + crypto.randomUUID();
+  fs.mkdirSync(path.join(P, ".claude"));
+  const pol = { purpose: "EOD futures settlement check", tools: ["mcp__market-data__*"], paths: ["**"], hosts: [], datasets: ["futures.brent.*", "futures.wti.eod"] };
+  fs.writeFileSync(path.join(P, ".claude/hive-admission.json"), JSON.stringify(pol));
+  const evs = [
+    { hook_event_name: "SessionStart", source: "startup" },
+    { hook_event_name: "PreToolUse", tool_name: "mcp__market-data__get_eod", tool_use_id: "d1", tool_input: { dataset: "futures.brent.eod", date: "2026-10-09" } },
+    { hook_event_name: "PostToolUse", tool_name: "mcp__market-data__get_eod", tool_use_id: "d1", tool_input: { dataset: "futures.brent.eod", date: "2026-10-09" }, tool_response: { settle: 1 } },
+    { hook_event_name: "PreToolUse", tool_name: "mcp__market-data__get_records", tool_use_id: "d2", tool_input: { dataset: "mortgage.loan-level", limit: 100 } },
+    { hook_event_name: "PostToolUse", tool_name: "mcp__market-data__get_records", tool_use_id: "d2", tool_input: { dataset: "mortgage.loan-level", limit: 100 }, tool_response: { rows: [] } },
+    { hook_event_name: "Stop", last_assistant_message: "done" },
+  ];
+  for (const ev of evs) spawnSync(process.execPath, [REC], { input: JSON.stringify({ ...ev, session_id: DS, cwd: P }), env: { ...process.env, HIVE_RECORDER_DIR: DD, HIVE_WITNESS_URL: "off", HIVE_TSA_URL: "off" } });
+  const pf = path.join(DD, "pol.json"); fs.writeFileSync(pf, JSON.stringify(pol));
+  const dr = verifyFile(path.join(DD, "records", DS + ".jsonl"), { admission: pf });
+  const o = dr.ok && dr.summary.outside_admission;
+  check("datasets: a pull from a dataset outside the admission is flagged, one inside is not", dr.ok && o.length === 1 && o[0].outside.datasets[0] === "mortgage.loan-level", JSON.stringify(o));
+  const raw = fs.readFileSync(path.join(DD, "records", DS + ".jsonl"), "utf8");
+  check("datasets: the record names the dataset but keeps none of the data", raw.includes("mortgage.loan-level") && !raw.includes("settle"));
+}
+
+// 12. A witness that is slow to answer (asleep, far away): the hook stops waiting, the statement still arrives.
+{
+  const slow = http.createServer((q, r) => { let b = ""; q.on("data", c => b += c); q.on("end", () => setTimeout(() => { const j = JSON.parse(b); r.writeHead(200, { "content-type": "application/json" }); r.end(JSON.stringify({ v: "hive.agent-action-witness/1", ...j, witnessed_at: new Date().toISOString(), witness_key: "x".repeat(43), sig: "slow" })); }, 1500)); }).listen(18791);
+  const SD = tmp("hive-slow-"), SS = "slow-" + crypto.randomUUID();
+  const t0 = Date.now();
+  spawnSync(process.execPath, [REC], { input: JSON.stringify({ hook_event_name: "SessionStart", source: "startup", session_id: SS, cwd: "/tmp" }), env: { ...process.env, HIVE_RECORDER_DIR: SD, HIVE_WITNESS_URL: "http://127.0.0.1:18791/v1/witness", HIVE_TSA_URL: "off", HIVE_WITNESS_WAIT_MS: "300" } });
+  const took = Date.now() - t0;
+  const wf = path.join(SD, "records", SS + ".witness.jsonl");
+  for (let i = 0; i < 60 && !fs.existsSync(wf); i++) await new Promise(r => setTimeout(r, 100));
+  check("slow witness: the hook returns after its wait, and the statement still arrives afterwards", took < 1400 && fs.existsSync(wf), took + " ms");
+  slow.close();
 }
 
 // 10. Witness memory (needs Postgres: HIVE_TEST_PG=postgres://user:pass@host/db). The witness keeps every

@@ -98,7 +98,12 @@ export function touchedBy(ev) {
   if (typeof i.command === "string") hostsIn(i.command).forEach(h => hosts.add(h));
   for (const k of ["url", "uri", "endpoint", "base_url"]) if (typeof i[k] === "string") hostsIn(i[k]).forEach(h => hosts.add(h));
   for (const k of ["host", "hostname"]) if (typeof i[k] === "string") hosts.add(i[k].toLowerCase());
-  return { paths: [...paths].sort(), hosts: [...hosts].sort() };
+  const datasets = new Set();
+  for (const k of ["dataset", "dataset_id", "datasets", "feed", "feed_id", "product", "product_id"]) {
+    const v = i[k];
+    for (const x of Array.isArray(v) ? v : [v]) if (typeof x === "string" && x.length <= 200) datasets.add(x);
+  }
+  return { paths: [...paths].sort(), hosts: [...hosts].sort(), ...(datasets.size ? { datasets: [...datasets].sort() } : {}) };
 }
 
 function fp(fk, v) { return v === undefined ? undefined : crypto.createHmac("sha256", fk).update(canon(v)).digest("hex"); }
@@ -240,12 +245,22 @@ export async function sendOutside(job) {
   const wait = Number(process.env.HIVE_WITNESS_WAIT_MS || 0);
   if (wait > 0) {
     const { sendAll } = await import("./witness-client.mjs");
-    await Promise.race([sendAll({ ...job, timeoutMs: wait, tries: 1 }), new Promise(r => setTimeout(r, wait))]);
-    return;
+    const done = await Promise.race([sendAll({ ...job, timeoutMs: wait, tries: 1 }).then(() => true), new Promise(r => setTimeout(() => r(false), wait))]);
+    if (done && !missing(job)) return;
+    // Slow or asleep: keep trying in the background so the statement still arrives, late and marked by its own time.
   }
-  const child = spawn(process.execPath, [path.join(HERE, "witness-client.mjs"), JSON.stringify(job)], { detached: true, stdio: "ignore" });
+  const rest = wait > 0 ? { ...job, witnesses: missing(job) || [], tsas: job.tsas.filter(u => !haveTs(job, u)) } : job;
+  if (!rest.witnesses.length && !rest.tsas.length) return;
+  const child = spawn(process.execPath, [path.join(HERE, "witness-client.mjs"), JSON.stringify(rest)], { detached: true, stdio: "ignore" });
   child.unref();
 }
+// Which witnesses have not yet answered for this head.
+function linesOf(f) { try { return fs.readFileSync(f, "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l)); } catch { return []; } }
+function missing(job) {
+  const got = linesOf(job.base + ".witness.jsonl").filter(w => w.count === job.req.count && w.head === job.req.head).length;
+  return got >= job.witnesses.length ? null : job.witnesses;
+}
+function haveTs(job, url) { return linesOf(job.base + ".timestamps.jsonl").some(t => t.count === job.req.count && t.head === job.req.head && t.tsa === url); }
 
 // Service mode: HIVE_RECORDER_URL points at recorderd, run by whoever starts the agent, somewhere the
 // agent can't read. The hook keeps only the fingerprint key; it sends fingerprints and touched

@@ -139,10 +139,10 @@ async function main() {
       console.log(`  prompts ${s.prompts}, turns ${s.turns}, tool calls asked ${s.tool_calls_asked}, completed ${s.tool_calls_completed}, failed ${s.tool_calls_failed}, asked with no outcome ${s.asked_without_outcome.length}`);
       console.log(`  tools completed: ${Object.entries(s.tools_completed).map(([k, v]) => k + " " + v).join(", ") || "none"}`);
       if (s.admission) {
-        console.log(`  admission: tools ${s.admission.scope.tools.join(" ")} | paths ${s.admission.scope.paths.join(" ")} | hosts ${s.admission.scope.hosts.join(" ") || "none"}`);
+        console.log(`  admission: tools ${s.admission.scope.tools.join(" ")} | paths ${s.admission.scope.paths.join(" ")} | hosts ${s.admission.scope.hosts.join(" ") || "none"}${s.admission.scope.datasets ? " | datasets " + (s.admission.scope.datasets.join(" ") || "none") : ""}`);
         if (!s.outside_admission.length) console.log("  every tool call stayed inside the admission");
         for (const o of s.outside_admission) {
-          const what = [o.outside.tool ? "tool " + o.tool : "", o.outside.hosts.length ? "hosts " + o.outside.hosts.join(", ") : "", o.outside.paths.length ? "paths " + o.outside.paths.join(", ") : ""].filter(Boolean).join("; ");
+          const what = [o.outside.tool ? "tool " + o.tool : "", o.outside.hosts.length ? "hosts " + o.outside.hosts.join(", ") : "", o.outside.paths.length ? "paths " + o.outside.paths.join(", ") : "", o.outside.datasets && o.outside.datasets.length ? "datasets " + o.outside.datasets.join(", ") : ""].filter(Boolean).join("; ");
           console.log(`  OUTSIDE ADMISSION  line ${o.seq} ${o.tool}: ${what}. ${o.failed ? "It ran and failed." : o.ran ? "It ran." : "It did not run."}`);
         }
       }
