@@ -217,7 +217,7 @@ GET /v1/witness/statements?recorder_key=<43 base64url>&session_fp=<64 hex>
 { "format": "hive.agent-action-witness/1", "witness_key": "...", "statements": [ ...each exactly as signed... ] }
 ```
 
-It stores the same four fingerprints it was sent, its own time, its key and its signature. Nothing else. A checker that asks (`--ask-witness`) checks the record against every remembered statement, not only the ones handed over. A record cut short, or rebuilt with a call removed and fresh statements obtained afterwards, fails, because the witness still holds the original heads. A session the witness has no memory of fails when memory is required.
+It stores the same four fingerprints it was sent, its own time, its key and its signature. Nothing else. It only remembers a request that carries `req_sig`, an Ed25519 signature by the recorder key over the canonical form of the four fields, so nobody without the recorder key can add a history to someone's session. An unsigned request is still witnessed and not remembered. If someone holding the recorder key rebuilds a record and asks again, the witness remembers both histories, and both fail against its memory. A checker that asks (`--ask-witness`) checks the record against every remembered statement, not only the ones handed over. A record cut short, or rebuilt with a call removed and fresh statements obtained afterwards, fails, because the witness still holds the original heads. A session the witness has no memory of fails when memory is required.
 
 ### Strict checking
 

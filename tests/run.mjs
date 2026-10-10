@@ -305,11 +305,19 @@ if (process.env.HIVE_TEST_PG) {
   fs.writeFileSync(rb, rebuilt.map(l => JSON.stringify(l)).join("\n") + "\n");
   // Ask the witness for fresh statements on the rebuilt heads, as a lab could, and hand only those over.
   const fresh = [];
-  for (const l of rebuilt.filter(l => ["SessionStart", "PreToolUse", "Seal"].includes(l.event))) fresh.push(await (await fetch(MU + "/v1/witness", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recorder_key: rebuilt[0].public_key, session_fp: crypto.createHash("sha256").update(MS).digest("hex"), count: l.seq + 1, head: l.hash }) })).json());
+  const sreq = (key, count, head, k = msk) => { const q = { recorder_key: key, session_fp: crypto.createHash("sha256").update(MS).digest("hex"), count, head }; q.req_sig = crypto.sign(null, Buffer.from(canon(q)), k).toString("base64url"); return q; };
+  // Poisoning: someone without the recorder key tries to add a history to this session.
+  const junk = { recorder_key: ml[0].public_key, session_fp: crypto.createHash("sha256").update(MS).digest("hex"), count: 2, head: "ab".repeat(32) };
+  const pj1 = await fetch(MU + "/v1/witness", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(junk) });
+  const pj2 = await fetch(MU + "/v1/witness", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(sreq(ml[0].public_key, 2, "ab".repeat(32), crypto.generateKeyPairSync("ed25519").privateKey)) });
+  const afterJunk = verifyFile(mrec, { witness: mrec + ".none", witnessKey: mkey, memory: await fetchMemory(ml, MU), requireMemory: true });
+  check("memory: nobody without the recorder key can add to a session's memory", pj1.headers.get("x-witness-remembered") === "false" && pj2.status === 400 && afterJunk.ok, pj1.headers.get("x-witness-remembered") + " " + pj2.status + " " + JSON.stringify(afterJunk.first_failure));
+  // A lab holding the recorder key rebuilds and asks the witness again, with properly signed requests.
+  for (const l of rebuilt.filter(l => ["SessionStart", "PreToolUse", "Seal"].includes(l.event))) fresh.push(await (await fetch(MU + "/v1/witness", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(sreq(rebuilt[0].public_key, l.seq + 1, l.hash)) })).json());
   fs.writeFileSync(rb.replace(/\.jsonl$/, ".witness.jsonl"), fresh.map(x => JSON.stringify(x)).join("\n") + "\n");
   const r3a = verifyFile(rb, { witnessKey: mkey });
   const r3 = verifyFile(rb, { witnessKey: mkey, memory: await fetchMemory(rebuilt, MU), requireMemory: true });
-  check("memory: a call deleted, re-signed, fresh statements obtained: passes on its own statements, rejected once the witness is asked", r3a.ok && !r3.ok && r3.first_failure.gate === "WITNESS", r3.first_failure && r3.first_failure.why);
+  check("memory: a call deleted, re-signed with the recorder key, fresh signed statements obtained: passes on its own statements, rejected once the witness is asked", r3a.ok && !r3.ok && r3.first_failure.gate === "WITNESS", r3.first_failure && r3.first_failure.why);
   const r4 = verifyFile(mrec, { memory: { statements: [], from: MU }, requireMemory: true });
   check("memory: a session the witness never saw fails when memory is required", !r4.ok && /no memory/.test(r4.first_failure.why));
   const bad = await fetch(MU + "/v1/witness/statements?recorder_key=x&session_fp=y");

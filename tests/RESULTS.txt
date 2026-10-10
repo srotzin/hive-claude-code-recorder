@@ -10,8 +10,8 @@ ok   reveal: the real refund command matches its fingerprint  MATCH  line 7 inpu
 ok   reveal: a different amount does not match
 ok   unwritable storage: still exits 0, prints nothing  exit 0
 ok   malformed input: still exits 0, prints nothing
-ok   40 parallel hooks: all exit 0, one valid chain of 41 lines  41 lines in 1878 ms
-ok   median hook time under 250 ms  median 81 ms, p90 87 ms
+ok   40 parallel hooks: all exit 0, one valid chain of 41 lines  41 lines in 1833 ms
+ok   median hook time under 250 ms  median 82 ms, p90 89 ms
 ok   witness: signed at the start, before every tool call and at every seal, by both witnesses  12 of 12 null
 ok   witness: every line, up to the last, is covered (--full-coverage)
 ok   witness: two different witnesses required and present (--min-witnesses 2)
@@ -19,7 +19,7 @@ ok   witness: only one of two required witnesses is rejected at WITNESS  only 1 
 ok   witness: statements signed within 30 s of each line pass --max-lag 30
 ok   witness: a statement signed later than allowed is rejected (a record rebuilt later gets late statements)  line 1 was witnessed 0 s after it was written, more than the -1 s allowed
 ok   witness: a record handed over without its statements fails when witnessing is required
-ok   timestamp: RFC 3161 tokens from a public authority verify with openssl and cover heads in the chain  [{"count":2,"at":"2026-10-10T17:25:28.000Z","tsa":"http://timestamp.digicert.com"},{"count":12,"at":"2026-10-10T17:25:29.000Z","tsa":"http://timestamp.digicert.com"}] 2
+ok   timestamp: RFC 3161 tokens from a public authority verify with openssl and cover heads in the chain  [{"count":2,"at":"2026-10-10T17:27:14.000Z","tsa":"http://timestamp.digicert.com"},{"count":12,"at":"2026-10-10T17:27:15.000Z","tsa":"http://timestamp.digicert.com"}] 2
 ok   timestamp: an authority time far from the line's own time is rejected at TIMESTAMP  the timestamp authority's time for line 2 is 3600 s from the time the line claims
 ok   witness refuses any field beyond the four fingerprints
 ok   tamper refund-call-deleted: rejected at CHAIN_ORDER  CHAIN_ORDER, expected seq 7, found 8
@@ -42,14 +42,21 @@ ok   --admission with the policy the reviewer was given passes
 ok   --admission with a different policy is rejected at ADMISSION
 ok   ML-DSA-65 signature removed from one line: rejected at PQ_SIGNATURE  line 4 ML-DSA-65 signature is missing or does not verify
 ok   scope check rewritten and fully re-signed with both recorder keys: rejected at ADMISSION  line 5 scope check does not match the admission
-ok   median hook time with ML-DSA-65 under 400 ms  median 133 ms
+ok   median hook time with ML-DSA-65 under 400 ms  median 128 ms
 ok   datasets: a pull from a dataset outside the admission is flagged, one inside is not  [{"seq":5,"tool":"mcp__market-data__get_records","use_id":"d2","ran":true,"failed":false,"outside":{"tool":false,"paths":[],"hosts":[],"datasets":["mortgage.loan-level"]}}]
 ok   datasets: the record names the dataset but keeps none of the data
-ok   slow witness: the hook returns after its wait, and the statement still arrives afterwards  414 ms
+ok   slow witness: the hook returns after its wait, and the statement still arrives afterwards  423 ms
+ok   memory: the witness remembers every statement it signed for the session  6 remembered, 6 saved locally
+ok   memory: a record handed over with no statements at all passes against what the witness remembers  null
+ok   memory: the end cut off, statements withheld: rejected, the witness remembers more lines  the witness saw 12 lines for this session, and this record has only 9
+ok   memory: nobody without the recorder key can add to a session's memory  false 400 null
+ok   memory: a call deleted, re-signed with the recorder key, fresh signed statements obtained: passes on its own statements, rejected once the witness is asked  the witness saw 4 lines ending in e916a492d3fb, and this record no longer has that
+ok   memory: a session the witness never saw fails when memory is required
+ok   memory: the witness only answers for a full recorder key and session fingerprint
 ok   service mode: the record and signing keys live with recorderd, the agent's side has neither
 ok   service mode: recorderd signs its own admission as line 1 and flags the call outside it
 ok   service mode: no content reaches recorderd
 ok   service mode: recorderd refuses a description carrying any field beyond fingerprints and names
 
-52 of 52 checks passed. 10 of 10 tamper cases rejected.
-Node v20.20.1, linux x64, 2026-10-10T17:25:34.964Z
+59 of 59 checks passed. 10 of 10 tamper cases rejected.
+Node v20.20.1, linux x64, 2026-10-10T17:27:40.005Z

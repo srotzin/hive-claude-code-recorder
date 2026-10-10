@@ -202,7 +202,7 @@ export function appendDesc(sessionId, desc, touched, { dir = DATA, admission = n
       out.push(line); last = line;
     };
     if (!last) {
-      write({ event: "RecorderKey", session: sessionId, public_key: keys.pub, key_id: keys.keyId, recorder: "hive-recorder/1.2.1", ...(pq ? { pq_alg: "ML-DSA-65", pq_public_key: pq.pub } : {}) });
+      write({ event: "RecorderKey", session: sessionId, public_key: keys.pub, key_id: keys.keyId, recorder: "hive-recorder/1.2.2", ...(pq ? { pq_alg: "ML-DSA-65", pq_public_key: pq.pub } : {}) });
       if (adm) write({ event: "Admission", session: sessionId, scope: adm.scope, labels: adm.policy.labels || undefined, fp_purpose: fp(keys.fk, adm.policy.purpose), policy_sha256: sha256hex(canon(adm.policy)) });
     }
     const d = { ...desc, session: sessionId };
@@ -234,6 +234,8 @@ export function outsideJob(r) {
   const tsas = (start || seal) ? list(process.env.HIVE_TSA_URL ?? "http://timestamp.digicert.com") : [];
   if (!witnesses.length && !tsas.length) return null;
   const req = { recorder_key: r.keys.pub, session_fp: sha256hex(String(r.last.session)), count: r.last.seq + 1, head: r.last.hash };
+  // Signed with the recorder key, so the witness remembers it and nobody else can add to this session.
+  req.req_sig = b64u(crypto.sign(null, Buffer.from(canon({ count: req.count, head: req.head, recorder_key: req.recorder_key, session_fp: req.session_fp })), r.keys.sk));
   return { base: r.file.replace(/\.jsonl$/, ""), req, witnesses, tsas };
 }
 
