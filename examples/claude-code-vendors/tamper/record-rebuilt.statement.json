@@ -1,0 +1,60 @@
+{
+ "v": "hive.licence-statement/1",
+ "vendor": "market-data",
+ "recorder_key": "IyC-i5liFGbjfJm1zMESe73_tt1vk4BNotjZA94umDY",
+ "period": {
+  "from": "2026-10-10T23:42:21.000Z",
+  "to": "2026-10-10T23:43:15.000Z"
+ },
+ "entitlement": [
+  "futures.brent.*",
+  "futures.wti.eod"
+ ],
+ "sessions": [
+  {
+   "session_fp": "398b32c1026cd19a156762566bdac5c3b3bc12ebfdc21d383917b5572116b452",
+   "count": 16,
+   "head": "b3290aa10b93e8e2aa191ce851f10ab7ba89b0516bd5c2456daf1e909919d25a"
+  },
+  {
+   "session_fp": "88da3f8596e618877a20aac5e35d1a6e5e11a917441f2667a8b01fd551d54d6c",
+   "count": 14,
+   "head": "c3b29b928e3dea7e3ba57d3c23e3ea0a0385ebe643a14e031a7e329ea145b76a"
+  }
+ ],
+ "usage": [
+  {
+   "dataset": "futures.brent.eod",
+   "asked": 1,
+   "ran": 1,
+   "outside": 0
+  },
+  {
+   "dataset": "futures.wti.eod",
+   "asked": 1,
+   "ran": 1,
+   "outside": 0
+  }
+ ],
+ "outside": [],
+ "answers": [
+  {
+   "session_fp": "398b32c1026cd19a156762566bdac5c3b3bc12ebfdc21d383917b5572116b452",
+   "seq": 12,
+   "drew_on": [
+    9
+   ],
+   "figures": 1
+  },
+  {
+   "session_fp": "88da3f8596e618877a20aac5e35d1a6e5e11a917441f2667a8b01fd551d54d6c",
+   "seq": 10,
+   "drew_on": [
+    9
+   ],
+   "figures": 1
+  }
+ ],
+ "issued_at": "2026-10-10T23:44:12.754Z",
+ "sig": "csP1bEgYRJjkl2bElnw7k9gn3kTSm_FJQJHtvquNq6MqMxxBoBXijVe2PYlL9hqmr56vQarK2BgjG67eTVg1Bg"
+}

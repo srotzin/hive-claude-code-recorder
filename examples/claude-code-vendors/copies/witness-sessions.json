@@ -1,0 +1,23 @@
+{
+ "from": "https://witness.thehiveryiq.com",
+ "period": {
+  "from": "2026-10-10T23:42:21.000Z",
+  "to": "2026-10-10T23:43:15.000Z"
+ },
+ "sessions": [
+  {
+   "session_fp": "398b32c1026cd19a156762566bdac5c3b3bc12ebfdc21d383917b5572116b452",
+   "count": 18,
+   "head": "ad94e256eaa77fb19c4683988e16cd7c58ce07b4412932d31b8bd75ea6849625",
+   "first_at": "2026-10-10T23:42:24.430Z",
+   "last_at": "2026-10-10T23:42:36.513Z"
+  },
+  {
+   "session_fp": "88da3f8596e618877a20aac5e35d1a6e5e11a917441f2667a8b01fd551d54d6c",
+   "count": 14,
+   "head": "c3b29b928e3dea7e3ba57d3c23e3ea0a0385ebe643a14e031a7e329ea145b76a",
+   "first_at": "2026-10-10T23:42:58.817Z",
+   "last_at": "2026-10-10T23:43:06.529Z"
+  }
+ ]
+}

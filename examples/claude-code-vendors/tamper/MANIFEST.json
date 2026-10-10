@@ -1,0 +1,194 @@
+[
+ {
+  "group": "copy",
+  "id": "pull-hidden",
+  "what": "In market-data's copy, the mortgage pull is hidden as digest only.",
+  "kind": "record",
+  "vendor": "market-data",
+  "files": {
+   "c.jsonl": "pull-hidden.c.jsonl"
+  },
+  "expected": "DISCLOSURE",
+  "got": "DISCLOSURE",
+  "why": "line 10 is a market-data line, and this copy hides it"
+ },
+ {
+  "group": "copy",
+  "id": "stub-relabelled",
+  "what": "The mortgage pull is hidden, and its digest-only line is relabelled as a ref-data line so the hiding looks allowed.",
+  "kind": "record",
+  "vendor": "market-data",
+  "files": {
+   "c.jsonl": "stub-relabelled.c.jsonl"
+  },
+  "expected": "ENTRY_HASH",
+  "got": "ENTRY_HASH",
+  "why": "line 10 changed after it was signed"
+ },
+ {
+  "group": "copy",
+  "id": "stub-dropped",
+  "what": "One of the hidden ref-data lines is taken out of the copy altogether.",
+  "kind": "record",
+  "vendor": "market-data",
+  "files": {
+   "c.jsonl": "stub-dropped.c.jsonl"
+  },
+  "expected": "CHAIN_ORDER",
+  "got": "CHAIN_ORDER",
+  "why": "expected seq 12, found 13"
+ },
+ {
+  "group": "copy",
+  "id": "relabelled-resigned",
+  "what": "The mortgage pull is relabelled as ref-data in the record itself and every line re-signed with both recorder keys, then hidden from market-data.",
+  "kind": "record",
+  "vendor": "market-data",
+  "files": {
+   "c.jsonl": "relabelled-resigned.c.jsonl"
+  },
+  "expected": "WITNESS",
+  "got": "WITNESS",
+  "why": "the witness saw 11 lines ending in b109cbda320e, and this record no longer has that"
+ },
+ {
+  "group": "vendors",
+  "id": "wrong-copy",
+  "what": "ref-data's copy, which hides every market-data line, is handed to market-data as if it were its copy.",
+  "kind": "record",
+  "vendor": "market-data",
+  "files": {
+   "c.jsonl": "wrong-copy.c.jsonl"
+  },
+  "expected": "DISCLOSURE",
+  "got": "DISCLOSURE",
+  "why": "line 2 is a market-data line, and this copy hides it"
+ },
+ {
+  "group": "vendors",
+  "id": "entitlement-hidden",
+  "what": "market-data's copy hides market-data's own entitlement line, so nobody can see what it was entitled to.",
+  "kind": "record",
+  "vendor": "market-data",
+  "files": {
+   "c.jsonl": "entitlement-hidden.c.jsonl"
+  },
+  "expected": "DISCLOSURE",
+  "got": "DISCLOSURE",
+  "why": "line 2 is a market-data line, and this copy hides it"
+ },
+ {
+  "group": "vendors",
+  "id": "issuer-pull-deleted",
+  "what": "ref-data's issuer pull is deleted, the record re-signed with both recorder keys, and ref-data handed a copy of that.",
+  "kind": "record",
+  "vendor": "ref-data",
+  "files": {
+   "c.jsonl": "issuer-pull-deleted.c.jsonl"
+  },
+  "expected": "WITNESS",
+  "got": "WITNESS",
+  "why": "the witness saw 13 lines ending in 1e1d74e49875, and this record no longer has that"
+ },
+ {
+  "group": "answer",
+  "id": "figure-changed",
+  "what": "The answer is handed over with Brent's 84.12 changed to 82.40.",
+  "kind": "answer",
+  "vendor": "market-data",
+  "files": {
+   "c.jsonl": "figure-changed.c.jsonl",
+   "answer": "figure-changed.answer.txt"
+  },
+  "expected": "ANSWER",
+  "got": "ANSWER",
+  "why": "this answer is not the one recorded at the end of any turn in this record"
+ },
+ {
+  "group": "answer",
+  "id": "trail-cut",
+  "what": "The answer's link to the mortgage pull is removed from the trail and every line re-signed.",
+  "kind": "answer",
+  "vendor": "market-data",
+  "files": {
+   "c.jsonl": "trail-cut.c.jsonl",
+   "answer": "trail-cut.answer.txt"
+  },
+  "expected": "WITNESS",
+  "got": "WITNESS",
+  "why": "the witness saw 16 lines ending in 73b319332f6b, and this record no longer has that"
+ },
+ {
+  "group": "answer",
+  "id": "trail-moved",
+  "what": "The answer's link to the mortgage pull is pointed at the Brent pull instead, so the answer seems to use only allowed data, and every line re-signed.",
+  "kind": "answer",
+  "vendor": "market-data",
+  "files": {
+   "c.jsonl": "trail-moved.c.jsonl",
+   "answer": "trail-moved.answer.txt"
+  },
+  "expected": "WITNESS",
+  "got": "WITNESS",
+  "why": "the witness saw 16 lines ending in 73b319332f6b, and this record no longer has that"
+ },
+ {
+  "group": "statement",
+  "id": "outside-dropped",
+  "what": "The statement is re-signed with the mortgage pull taken out, so market-data sees zero pulls outside its entitlement.",
+  "kind": "statement",
+  "vendor": "market-data",
+  "files": {
+   "s1.jsonl": "outside-dropped.s1.jsonl",
+   "s2.jsonl": "outside-dropped.s2.jsonl",
+   "statement.json": "outside-dropped.statement.json"
+  },
+  "expected": "USAGE",
+  "got": "USAGE",
+  "why": "the statement's usage does not match what the records show"
+ },
+ {
+  "group": "statement",
+  "id": "session-left-out",
+  "what": "The statement covers only the second session, and is re-signed.",
+  "kind": "statement",
+  "vendor": "market-data",
+  "files": {
+   "s2.jsonl": "session-left-out.s2.jsonl",
+   "statement.json": "session-left-out.statement.json"
+  },
+  "expected": "COMPLETE",
+  "got": "COMPLETE",
+  "why": "the witness saw session 398b32c1026c (18 lines) in this period, and the statement leaves it out"
+ },
+ {
+  "group": "statement",
+  "id": "record-rebuilt",
+  "what": "The mortgage pull is deleted from the record, every line re-signed, and the copies and statement rebuilt to match.",
+  "kind": "statement",
+  "vendor": "market-data",
+  "files": {
+   "s1.jsonl": "record-rebuilt.s1.jsonl",
+   "s2.jsonl": "record-rebuilt.s2.jsonl",
+   "statement.json": "record-rebuilt.statement.json"
+  },
+  "expected": "RECORD",
+  "got": "RECORD",
+  "why": "session 398b32c1026c: WITNESS, the witness saw 11 lines ending in b109cbda320e, and this record no longer has that"
+ },
+ {
+  "group": "statement",
+  "id": "acceptance-moved",
+  "what": "market-data's acceptance is moved onto a reissued statement it never accepted.",
+  "kind": "statement",
+  "vendor": "market-data",
+  "files": {
+   "s1.jsonl": "acceptance-moved.s1.jsonl",
+   "s2.jsonl": "acceptance-moved.s2.jsonl",
+   "statement.json": "acceptance-moved.statement.json"
+  },
+  "expected": "ACCEPTED",
+  "got": "ACCEPTED",
+  "why": "the vendor's acceptance does not match this statement"
+ }
+]

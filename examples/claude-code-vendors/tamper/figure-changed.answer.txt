@@ -1,0 +1,5 @@
+- **Brent EOD (2026-10-09):** settled at 82.40 USD.
+- **Mortgage loan-level (5 rows):** loans L1000–L1004, balances from $250,000 to $254,000 in $1,000 steps, totalling $1,260,000 (average $252,000).
+- **Issuer NWR-4410:** Northwind Refining, rated A-, with 41,250,000 shares outstanding.
+
+All three tools marked their results as stand-in data, so these aren't real market or reference figures.
