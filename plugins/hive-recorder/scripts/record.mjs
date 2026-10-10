@@ -13,7 +13,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { FORMAT, ZERO, canon, checkScope, scopeOf } from "./core.mjs";
+import { FORMAT, ZERO, canon, checkScope, scopeOf, digestOf, vendorOf, numbersIn } from "./core.mjs";
 import { ml_dsa65 } from "./vendor/ml-dsa-65.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -154,10 +154,27 @@ export function describe(ev, fk, scope) {
     take("input", ev.tool_input);
     if (scope) { const touched = touchedBy(ev); d.scope = { touched, outside: checkScope(scope, ev.tool_name, touched) }; }
   }
-  else if (e === "PostToolUse") { take("input", ev.tool_input); take("response", ev.tool_response); }
+  else if (e === "PostToolUse") {
+    take("input", ev.tool_input); take("response", ev.tool_response);
+    // Answer trail (kept only in split records): the figures in the result, fingerprinted with a
+    // per-line nonce for outside checking, and keyed with the fingerprint key for the recorder.
+    if (ev.tool_response !== undefined) {
+      const nums = numbersIn(typeof ev.tool_response === "string" ? ev.tool_response : canon(ev.tool_response)).slice(0, 500);
+      d.nonce = crypto.randomBytes(16).toString("hex");
+      d.vals = nums.map(v => sha256hex(d.nonce + "|" + v)).sort();
+      d.vals_fk = nums.map(v => fp(fk, "num:" + v)).sort();
+    }
+  }
   else if (e === "PostToolUseFailure") { take("input", ev.tool_input); take("error", ev.error); if (ev.is_interrupt !== undefined) d.interrupted = !!ev.is_interrupt; }
   else if (e === "UserPromptSubmit") take("prompt", ev.prompt);
-  else if (e === "Stop" || e === "SubagentStop") take("last_message", ev.last_assistant_message);
+  else if (e === "Stop" || e === "SubagentStop") {
+    take("last_message", ev.last_assistant_message);
+    if (typeof ev.last_assistant_message === "string") {
+      d.nonce = crypto.randomBytes(16).toString("hex");
+      d.answer_fp = sha256hex(d.nonce + "|" + ev.last_assistant_message);
+      d.answer_vals_fk = numbersIn(ev.last_assistant_message).slice(0, 500).map(v => fp(fk, "num:" + v)).sort();
+    }
+  }
   else if (e === "SessionStart") { d.source = ev.source; if (ev.model) d.model = ev.model; }
   else if (e === "SessionEnd") d.reason = ev.reason;
   else {
@@ -186,7 +203,8 @@ export function appendDesc(sessionId, desc, touched, { dir = DATA, admission = n
     let meta = null;
     const adm = !last ? admission : null;
     if (!last) {
-      meta = { pq: process.env.HIVE_PQ === "1", scope: adm ? adm.scope : null };
+      const ent = adm && adm.policy.entitlements && typeof adm.policy.entitlements === "object" ? Object.fromEntries(Object.keys(adm.policy.entitlements).sort().map(k => [k, (adm.policy.entitlements[k] || []).map(String).sort()])) : null;
+      meta = { pq: process.env.HIVE_PQ === "1", scope: adm ? adm.scope : null, split: process.env.HIVE_SPLIT === "1" || !!ent, entitlements: ent };
       fs.writeFileSync(metaFile, JSON.stringify(meta));
     } else {
       try { meta = JSON.parse(fs.readFileSync(metaFile, "utf8")); } catch { meta = { pq: false, scope: null }; }
@@ -194,7 +212,8 @@ export function appendDesc(sessionId, desc, touched, { dir = DATA, admission = n
     const pq = meta.pq ? loadPq(keys.kd) : null;
     const write = b => {
       const line = { v: FORMAT, seq: last ? last.seq + 1 : 0, prev: last ? last.hash : ZERO, t: now(), key: keys.keyId, ...b };
-      const c = canon(line);
+      if (line.form === "split" && !line.nonce) line.nonce = crypto.randomBytes(16).toString("hex");
+      const c = line.form === "split" ? canon(digestOf(line, sha256hex)) : canon(line);
       line.hash = sha256hex(c);
       line.sig = b64u(crypto.sign(null, Buffer.from(c), keys.sk));
       if (pq) line.sig_pq = b64u(ml_dsa65.sign(Buffer.from(c), pq.sk));
@@ -202,12 +221,35 @@ export function appendDesc(sessionId, desc, touched, { dir = DATA, admission = n
       out.push(line); last = line;
     };
     if (!last) {
-      write({ event: "RecorderKey", session: sessionId, public_key: keys.pub, key_id: keys.keyId, recorder: "hive-recorder/1.2.2", ...(pq ? { pq_alg: "ML-DSA-65", pq_public_key: pq.pub } : {}) });
+      write({ event: "RecorderKey", session: sessionId, public_key: keys.pub, key_id: keys.keyId, recorder: "hive-recorder/1.3.0", ...(pq ? { pq_alg: "ML-DSA-65", pq_public_key: pq.pub } : {}) });
       if (adm) write({ event: "Admission", session: sessionId, scope: adm.scope, labels: adm.policy.labels || undefined, fp_purpose: fp(keys.fk, adm.policy.purpose), policy_sha256: sha256hex(canon(adm.policy)) });
+      // One entitlement line per vendor, so each vendor can be shown its own and nobody else's.
+      if (adm && meta.entitlements) for (const [v, ds] of Object.entries(meta.entitlements)) write({ event: "Entitlement", session: sessionId, form: "split", vendor: v, datasets: ds });
     }
-    const d = { ...desc, session: sessionId };
-    if (meta.scope && touched && d.event === "PreToolUse" && d.tool) d.scope = { touched, outside: checkScope(meta.scope, d.tool.name, touched) };
+    const { vals_fk, answer_fp, answer_vals_fk, ...d0 } = desc;
+    const d = { ...d0, session: sessionId };
+    if (meta.scope && touched && d.event === "PreToolUse" && d.tool) {
+      const sc = meta.entitlements ? { ...meta.scope, datasets: meta.entitlements[vendorOf(d.tool.name)] || [] } : meta.scope;
+      d.scope = { touched, outside: checkScope(sc, d.tool.name, touched) };
+    }
+    const valsFile = file.replace(/\.jsonl$/, ".vals.json");
+    if (meta.split) {
+      if (d.tool || ["UserPromptSubmit", "Stop", "SubagentStop"].includes(d.event)) { d.form = "split"; const v = d.tool && vendorOf(d.tool.name); if (v) d.vendor = v; }
+      if (answer_fp) {
+        // Which earlier results this answer repeats figures from. The recorder matches keyed
+        // fingerprints, so it never sees the figures themselves.
+        let side = {}; try { side = JSON.parse(fs.readFileSync(valsFile, "utf8")); } catch {}
+        const mine = new Set(answer_vals_fk || []);
+        const drew_on = Object.entries(side).map(([seq, x]) => ({ seq: Number(seq), vendor: x.vendor, matched: x.fk.filter(h => mine.has(h)).length })).filter(x => x.matched > 0).sort((a, b) => a.seq - b.seq);
+        d.answer = { fp: answer_fp, drew_on };
+      }
+    } else { delete d.nonce; delete d.vals; }
     write(d);
+    if (meta.split && vals_fk && vals_fk.length) {
+      let side = {}; try { side = JSON.parse(fs.readFileSync(valsFile, "utf8")); } catch {}
+      side[last.seq] = { vendor: last.vendor, fk: vals_fk };
+      fs.writeFileSync(valsFile, JSON.stringify(side), { mode: 0o600 });
+    }
     // Seal at the end of each turn and at session end.
     if (d.event === "Stop" || d.event === "SessionEnd") write({ event: "Seal", session: sessionId, count: last.seq + 1, head: last.hash });
     return { file, lines: out, keys, last };

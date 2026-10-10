@@ -87,6 +87,22 @@ A witness started with `DATABASE_URL` remembers every statement it signs. Check 
 
 `examples/claude-code-recorderd/` is a real session recorded this way, with 6 tamper cases aimed at these protections.
 
+## Sharing a record with more than one data vendor (1.3)
+
+When the admission lists `entitlements`, one set of datasets per vendor, the recorder writes split lines. Each one is signed over its public fields plus one fingerprint of everything else, so a copy can show some lines in full and others only as that fingerprint. The hidden lines still chain, still sign and still match the witness, so nothing can be removed.
+
+```json
+{ "tools": ["mcp__market-data__*", "mcp__ref-data__*"], "paths": ["**"], "hosts": [],
+  "entitlements": { "market-data": ["futures.brent.*"], "ref-data": ["issuers.reference"] } }
+```
+
+- **One vendor's copy.** `node verify.mjs disclose session.jsonl --vendor market-data --out md.jsonl` shows that vendor's pulls in full and hides the rest. The vendor checks it with `--disclose-for market-data --ask-witness`. A copy that hides one of its pulls fails at `DISCLOSURE`.
+- **Two vendors, one witness.** Each vendor gets its own copy of the same session, and both check against the same witness memory.
+- **Answer trail.** The turn end lists which tool results the answer repeats figures from. `node verify.mjs answer md.jsonl --text answer.txt` redoes the match from the answer text.
+- **Licence statement.** `node statement.mjs build --vendor market-data --from ... --to ... --out dir session-1.jsonl session-2.jsonl` sums a vendor's usage for a period and signs it. The vendor can accept it with its own key. `node verify.mjs statement dir/statement.json dir/*.jsonl --ask-witness` rebuilds every number, checks every copy against the witness, and fails if the witness saw a session in the period that the statement leaves out.
+
+`HIVE_TEST_PG=postgres://... node tests/vendors.mjs` runs 22 checks on all four, with a real witness and Postgres.
+
 ## Rules it keeps
 
 - Always exits 0 and prints nothing, so it can never block, deny or change a tool call. It is not a permission check.

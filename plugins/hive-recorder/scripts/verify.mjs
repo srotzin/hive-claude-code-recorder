@@ -10,6 +10,10 @@
 //   --strict turns on --require-witness --full-coverage --require-timestamp --require-end and --max-lag 10.
 //   --witness-key can be given more than once. --min-witnesses counts different pinned witnesses.
 //   Timestamp tokens (RFC 3161) are checked with the openssl command and your system's CA certificates.
+//   --disclose-for <vendor> checks a copy made for one vendor: other lines may be digest only, that vendor's may not.
+//   node verify.mjs disclose <session.jsonl> --vendor <name> --out <copy.jsonl>
+//   node verify.mjs answer <session.jsonl> --text <answer.txt>     (does this answer, and its trail, match the record?)
+//   node verify.mjs statement <statement.json> <copy.jsonl>... [--ask-witness url] [--key key.json] [--vendor-key key]
 //   node verify.mjs reveal <session.jsonl> --seq <n> --field <input|response|error|prompt|last_message> --value <file> --fingerprint-key <file>
 //
 // Exit code 0: every gate passes and nothing fell outside the admission.
@@ -17,7 +21,7 @@
 //           1: a gate failed. The record was changed, or is not what you were told it is.
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { verifyRecord, canon, GATES, scopeOf } from "./core.mjs";
+import { verifyRecord, canon, GATES, scopeOf, discloseFor, checkAnswer, checkStatement } from "./core.mjs";
 import { ml_dsa65 } from "./vendor/ml-dsa-65.mjs";
 import path from "node:path";
 import os from "node:os";
@@ -73,7 +77,7 @@ export async function fetchMemory(lines, witnessUrl) {
   return { statements: (await r.json()).statements, from: base };
 }
 
-export function verifyFile(file, { key, witness, witnessKey, witnessKeys, minWitnesses, maxLag, requireWitness, fullCoverage, timestamps, requireTimestamp, requireEnd, caFile, admission, memory, requireMemory } = {}) {
+export function verifyFile(file, { key, witness, witnessKey, witnessKeys, minWitnesses, maxLag, requireWitness, fullCoverage, timestamps, requireTimestamp, requireEnd, caFile, admission, memory, requireMemory, disclose } = {}) {
   const lines = readLines(file);
   const wf = witness || file.replace(/\.jsonl$/, ".witness.jsonl");
   const witnesses = fs.existsSync(wf) && wf !== file ? readLines(wf) : [];
@@ -83,7 +87,7 @@ export function verifyFile(file, { key, witness, witnessKey, witnessKeys, minWit
   const pins = [...(witnessKeys || []), ...(witnessKey ? [witnessKey] : [])].map(keyArg);
   return verifyRecord(lines, c, {
     pin: keyArg(key), witnesses, witnessPins: pins, minWitnesses, maxLagSec: maxLag, requireWitness, requireFullCoverage: fullCoverage,
-    timestamps: ts, requireTimestamp, requireEnd, memory, requireMemory,
+    timestamps: ts, requireTimestamp, requireEnd, memory, requireMemory, ...(disclose ? { allowRedacted: true, discloseFor: disclose } : {}),
     admissionPin: pol ? c.sha256hex(canon(pol)) : undefined, admissionScope: pol ? scopeOf(pol) : undefined,
   });
 }
@@ -100,9 +104,34 @@ function reveal(args) {
   process.exitCode = ok ? 0 : 1;
 }
 
+// Every session the witness remembers for a recorder key in a period.
+export async function fetchSessions(recorderKey, period, witnessUrl) {
+  const base = String(witnessUrl).replace(/\/v1\/witness\/?$/, "").replace(/\/$/, "");
+  const r = await fetch(base + "/v1/witness/sessions?" + new URLSearchParams({ recorder_key: recorderKey, from: period.from, to: period.to }), { signal: AbortSignal.timeout(90000) });
+  if (!r.ok) throw new Error("the witness at " + base + " answered " + r.status);
+  return (await r.json()).sessions;
+}
+async function statementCmd(args) {
+  const st = JSON.parse(fs.readFileSync(args[1], "utf8"));
+  const files = args.slice(2).filter((a, i, all) => !a.startsWith("--") && !/^https?:/.test(a) && !(i > 0 && all[i - 1].startsWith("--") && all[i - 1] !== "--ask-witness"));
+  const discs = files.map(readLines);
+  const nx = args[args.indexOf("--ask-witness") + 1];
+  const url = nx && /^https?:/.test(nx) ? nx : "https://witness.thehiveryiq.com";
+  const memory = {};
+  for (const L of discs) memory[c.sha256hex(String(L[0].session))] = (await fetchMemory(L, url)).statements;
+  const witnessSessions = await fetchSessions(st.recorder_key, st.period, url);
+  const r = checkStatement(st, discs, c, { recorderPin: keyArg(opt(args, "--key")), vendorPin: keyArg(opt(args, "--vendor-key")), witnessPin: keyArg(opt(args, "--witness-key")), memory, witnessSessions, from: url });
+  if (r.ok) console.log(`PASS   ${st.vendor}: ${r.sessions} sessions, ${r.asked} pulls, ${r.outside} outside the entitlement, ${r.answers} answers drew on its data. Every session the witness saw in the period is included.${r.accepted_at ? " Accepted by the vendor at " + r.accepted_at + "." : ""}`);
+  else console.log(`REJECT ${r.step}: ${r.why}`);
+  process.exitCode = r.ok ? 0 : 1;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === "reveal") return reveal(args);
+  if (args[0] === "disclose") { const out = discloseFor(readLines(args[1]), opt(args, "--vendor"), c.sha256hex); fs.writeFileSync(opt(args, "--out"), out.map(l => JSON.stringify(l)).join("\n") + "\n"); console.log(`wrote ${opt(args, "--out")}: ${out.filter(l => l.redacted).length} of ${out.length} lines digest only`); return; }
+  if (args[0] === "answer") { const r = checkAnswer(readLines(args[1]), fs.readFileSync(opt(args, "--text"), "utf8"), c); console.log(r.ok ? `MATCH  the answer at line ${r.stop_seq} drew on ${r.drew_on.map(d => "line " + d.seq + " (" + (d.vendor || "no vendor") + ", " + d.matched + " figures)").join(", ") || "no tool results"}` : "NO MATCH  " + r.why); process.exitCode = r.ok ? 0 : 1; return; }
+  if (args[0] === "statement") return statementCmd(args);
   const files = args.filter((a, i) => !a.startsWith("--") && !/^https?:\/\//.test(a) && !(i > 0 && args[i - 1].startsWith("--") && !FLAGS.has(args[i - 1])));
   if (!files.length) { console.log("usage: node verify.mjs <session.jsonl> [--key key.json] [--witness-key key]... [--min-witnesses n] [--max-lag s] [--require-witness] [--full-coverage] [--require-timestamp] [--require-end] [--strict] [--admission policy.json] [--json]"); process.exitCode = 2; return; }
   let bad = 0, outside = 0;
@@ -122,7 +151,7 @@ async function main() {
       requireWitness: args.includes("--require-witness") || args.includes("--strict"), fullCoverage: args.includes("--full-coverage") || args.includes("--strict"),
       timestamps: opt(args, "--timestamps"), requireTimestamp: args.includes("--require-timestamp") || args.includes("--strict"), caFile: opt(args, "--ca-file"),
       requireEnd: args.includes("--require-end") || args.includes("--strict"),
-      admission: opt(args, "--admission"),
+      admission: opt(args, "--admission"), disclose: opt(args, "--disclose-for"),
     });  }
     catch (e) { r = { ok: false, gates: { FORMAT: "FAIL" }, first_failure: { gate: "FORMAT", why: String(e.message) } }; }
     if (!r.ok) bad++;

@@ -43,6 +43,16 @@ async function recall(recorder_key, session_fp) {
   return r.rows.map(x => ({ v: WITNESS_FORMAT, recorder_key: x.recorder_key, session_fp: x.session_fp, count: x.count, head: x.head, witnessed_at: x.witnessed_at_text, witness_key: x.witness_key, sig: x.sig }));
 }
 
+// Every session the witness remembers for one recorder key, so a usage statement that leaves one
+// out can be caught. Only fingerprints: session_fp, how many lines, the last head and when.
+async function sessions(recorder_key, from, to) {
+  const r = await db.query(`SELECT DISTINCT ON (session_fp) session_fp, count, head, witnessed_at_text,
+      (SELECT min(witnessed_at_text) FROM witness_statements w2 WHERE w2.recorder_key = w.recorder_key AND w2.session_fp = w.session_fp AND w2.request_signed) AS first_at
+    FROM witness_statements w WHERE recorder_key = $1 AND request_signed AND witnessed_at >= $2 AND witnessed_at <= $3
+    ORDER BY session_fp, count DESC, witnessed_at DESC LIMIT 5000`, [recorder_key, from, to]);
+  return r.rows.map(x => ({ session_fp: x.session_fp, count: x.count, head: x.head, first_at: x.first_at, last_at: x.witnessed_at_text }));
+}
+
 const send = (res, code, obj, extra = {}) => { res.writeHead(code, { "content-type": "application/json", "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-expose-headers": "x-witness-remembered", "cache-control": "no-store", ...extra }); res.end(JSON.stringify(obj, null, 1)); };
 
 const server = http.createServer(async (req, res) => {
@@ -55,6 +65,14 @@ const server = http.createServer(async (req, res) => {
     if (!B64.test(rk) || !HEX.test(sf)) return send(res, 400, { error: "give recorder_key (43 base64url characters) and session_fp (64 hex)" });
     if (!db) return send(res, 501, { error: "this witness keeps no memory" });
     try { const statements = await recall(rk, sf); return send(res, 200, { format: WITNESS_FORMAT, witness_key: pub, recorder_key: rk, session_fp: sf, statements }); }
+    catch { return send(res, 503, { error: "memory unavailable, try again" }); }
+  }
+  if (req.method === "GET" && u.pathname === "/v1/witness/sessions") {
+    const rk = u.searchParams.get("recorder_key") || "";
+    const from = new Date(u.searchParams.get("from") || 0), to = new Date(u.searchParams.get("to") || Date.now() + 864e5);
+    if (!B64.test(rk) || isNaN(from) || isNaN(to)) return send(res, 400, { error: "give recorder_key (43 base64url characters), and optionally from and to as ISO times" });
+    if (!db) return send(res, 501, { error: "this witness keeps no memory" });
+    try { return send(res, 200, { format: WITNESS_FORMAT, witness_key: pub, recorder_key: rk, from: from.toISOString(), to: to.toISOString(), sessions: await sessions(rk, from, to) }); }
     catch { return send(res, 503, { error: "memory unavailable, try again" }); }
   }
   if (req.method === "POST" && u.pathname === "/v1/witness") {
@@ -82,7 +100,7 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
-  send(res, 404, { error: "not found", try: ["/health", "/v1/witness/key", "POST /v1/witness", "GET /v1/witness/statements?recorder_key=&session_fp="] });
+  send(res, 404, { error: "not found", try: ["/health", "/v1/witness/key", "POST /v1/witness", "GET /v1/witness/statements?recorder_key=&session_fp=", "GET /v1/witness/sessions?recorder_key=&from=&to="] });
 });
 
 openMemory().catch(e => { console.error("memory unavailable:", e.message); db = null; })

@@ -20,6 +20,52 @@ export function body(line) {
   return rest;
 }
 
+// Split lines (format 1.3). A line with form "split" is hashed and signed over its digest form:
+// the public fields below, plus one fingerprint of everything else (which carries a random nonce,
+// so it can't be guessed). Whoever holds the record can then hand someone a copy where some lines
+// are only their digest form. Those lines still chain, still sign and still match what the witness
+// saw, so nothing can be removed, while what they say stays private.
+export const PUBLIC = ["v", "seq", "prev", "t", "key", "event", "session", "form", "vendor"];
+export function digestOf(b, sha256hex) {
+  const pub = {}, priv = {};
+  for (const [k, v] of Object.entries(b)) (PUBLIC.includes(k) ? pub : priv)[k] = v;
+  return { ...pub, private_fp: sha256hex(canon(priv)) };
+}
+// The exact bytes a line's hash and signatures cover.
+export function signable(line, sha256hex) {
+  const b = body(line);
+  if (line.form !== "split") return canon(b);
+  if (line.redacted === true) { const { redacted, ...d } = b; return canon(d); }
+  return canon(digestOf(b, sha256hex));
+}
+// A copy of a line showing only its digest form.
+export function stubOf(line, sha256hex) {
+  if (line.form !== "split" || line.redacted) return line;
+  const out = { ...digestOf(body(line), sha256hex), hash: line.hash, sig: line.sig, redacted: true };
+  if (line.sig_pq) out.sig_pq = line.sig_pq;
+  return out;
+}
+// The vendor behind a tool: the MCP server in mcp__<server>__<tool>.
+export function vendorOf(name) { const m = /^mcp__([A-Za-z0-9_.-]+?)__/.exec(String(name || "")); return m ? m[1] : undefined; }
+// A copy of a record for one vendor: its own lines, the turn ends and every unsplit line in full,
+// everything else as digest form.
+export function discloseFor(lines, vendor, sha256hex) {
+  return lines.map(l => (l.form !== "split" || l.vendor === vendor || (!l.vendor && (l.event === "Stop" || l.event === "SubagentStop"))) ? l : stubOf(l, sha256hex));
+}
+// Figures in a text, normalised, for linking an answer to the tool results it drew on.
+// Skips one and two digit integers and years, which match too much by chance.
+export function numbersIn(text) {
+  const out = new Set();
+  for (const m of String(text).matchAll(/-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?/g)) {
+    const n = Number(m[0].replace(/,/g, ""));
+    if (!Number.isFinite(n)) continue;
+    const isInt = Number.isInteger(n), a = Math.abs(n);
+    if (isInt && (a < 100 || (a >= 1900 && a <= 2100))) continue;
+    out.add(String(n));
+  }
+  return [...out];
+}
+
 // Glob match. "**" matches anything, "*" matches anything except sep, "?" one character.
 export function globMatch(pattern, s, sep = "/") {
   const e = c => c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
@@ -59,7 +105,7 @@ export function scopeOf(p) {
 }
 export function isOutside(o) { return !!(o && (o.tool || (o.paths && o.paths.length) || (o.hosts && o.hosts.length) || (o.datasets && o.datasets.length))); }
 
-export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATURE", "PQ_SIGNATURE", "SEAL", "ADMISSION", "WITNESS", "TIMESTAMP"];
+export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATURE", "PQ_SIGNATURE", "DISCLOSURE", "SEAL", "ADMISSION", "WITNESS", "TIMESTAMP"];
 
 // Verify one session record.
 //   lines:    array of parsed JSON lines
@@ -77,7 +123,9 @@ export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATU
 //               requireTimestamp: no timestamp is a failure, not NONE,
 //               requireEnd: the record must finish with SessionEnd and a seal,
 //               memory: { statements, from } fetched from the witness for this session,
-//               requireMemory: the witness must remember this session }
+//               requireMemory: the witness must remember this session,
+//               allowRedacted: accept a copy where some split lines are digest form only,
+//               discloseFor: vendor name; every line of that vendor must be shown in full }
 export function verifyRecord(lines, c, opts = {}) {
   const res = { ok: false, gates: {}, first_failure: null, entries: lines.length, summary: null };
   const fail = (g, why) => { if (!res.first_failure) res.first_failure = { gate: g, why }; res.gates[g] = "FAIL"; };
@@ -88,6 +136,7 @@ export function verifyRecord(lines, c, opts = {}) {
   const start = lines[0];
   for (const [i, l] of lines.entries()) {
     if (!l || l.v !== FORMAT || typeof l.seq !== "number" || typeof l.hash !== "string" || typeof l.sig !== "string" || typeof l.event !== "string") { fail("FORMAT", "line " + i + " is not " + FORMAT); return res; }
+    if (l.redacted !== undefined && (l.redacted !== true || l.form !== "split" || typeof l.private_fp !== "string" || Object.keys(l).some(k => !PUBLIC.includes(k) && !["private_fp", "redacted", "hash", "sig", "sig_pq"].includes(k)))) { fail("FORMAT", "line " + i + " is a malformed digest-only line"); return res; }
   }
   if (start.event !== "RecorderKey" || typeof start.public_key !== "string") { fail("FORMAT", "first line must publish the recorder key"); return res; }
   pass("FORMAT");
@@ -103,7 +152,7 @@ export function verifyRecord(lines, c, opts = {}) {
   for (const [i, l] of lines.entries()) {
     if (l.seq !== i) { fail("CHAIN_ORDER", "expected seq " + i + ", found " + l.seq); break; }
     if (l.prev !== prev) { fail("CHAIN_ORDER", "line " + i + " does not point to the line before it"); break; }
-    const b = canon(body(l));
+    const b = signable(l, c.sha256hex);
     if (c.sha256hex(b) !== l.hash) { fail("ENTRY_HASH", "line " + i + " changed after it was signed"); break; }
     if (!c.verify(pub, b, l.sig)) { fail("SIGNATURE", "line " + i + " signature does not verify"); break; }
     prev = l.hash;
@@ -115,11 +164,23 @@ export function verifyRecord(lines, c, opts = {}) {
     if (typeof c.verifyPq !== "function") res.gates.PQ_SIGNATURE = "NOT_CHECKED";
     else {
       for (const [i, l] of lines.entries()) {
-        if (typeof l.sig_pq !== "string" || !c.verifyPq(start.pq_public_key, canon(body(l)), l.sig_pq)) { fail("PQ_SIGNATURE", "line " + i + " ML-DSA-65 signature is missing or does not verify"); break; }
+        if (typeof l.sig_pq !== "string" || !c.verifyPq(start.pq_public_key, signable(l, c.sha256hex), l.sig_pq)) { fail("PQ_SIGNATURE", "line " + i + " ML-DSA-65 signature is missing or does not verify"); break; }
       }
       pass("PQ_SIGNATURE");
     }
   } else res.gates.PQ_SIGNATURE = "NONE";
+
+  // DISCLOSURE: a copy with digest-only lines is only accepted when the reviewer asked for one,
+  // and every line of the vendor it was made for must be shown in full.
+  const stubs = lines.filter(l => l.redacted === true);
+  res.redacted = stubs.length;
+  if (stubs.length && !opts.allowRedacted) fail("DISCLOSURE", "this copy shows " + stubs.length + " lines as digest only; check it as a disclosure");
+  else if (opts.discloseFor) {
+    const hid = stubs.find(l => l.vendor === opts.discloseFor);
+    if (hid) fail("DISCLOSURE", "line " + hid.seq + " is a " + opts.discloseFor + " line, and this copy hides it");
+    else pass("DISCLOSURE");
+  } else if (stubs.length) pass("DISCLOSURE");
+  else res.gates.DISCLOSURE = "NONE";
 
   // SEAL: every Seal line must cover exactly the lines before it.
   const seals = lines.filter(l => l.event === "Seal");
@@ -145,10 +206,19 @@ export function verifyRecord(lines, c, opts = {}) {
     else if (opts.admissionPin && a.policy_sha256 !== opts.admissionPin) fail("ADMISSION", "the admission in this record is not the policy you expected");
     else if (opts.admissionScope && canon(a.scope) !== canon(opts.admissionScope)) fail("ADMISSION", "the admission's scope is not the scope in the policy you expected");
     else {
+      // Entitlements: one split line per vendor, right after the admission, listing that vendor's datasets.
+      const ents = lines.filter(l => l.event === "Entitlement");
+      const entOf = {}, hiddenEnt = new Set();
+      ents.forEach((e, k) => {
+        if (e.seq !== 2 + k) fail("ADMISSION", "entitlement at line " + e.seq + " must follow the admission directly");
+        if (e.redacted) hiddenEnt.add(e.vendor); else entOf[e.vendor] = Array.isArray(e.datasets) ? e.datasets : [];
+      });
       for (const l of lines) {
-        if (l.event !== "PreToolUse") continue;
+        if (l.event !== "PreToolUse" || l.redacted) continue;
         if (!l.scope || !l.scope.touched) { fail("ADMISSION", "line " + l.seq + " has no scope check"); break; }
-        const want = checkScope(a.scope, l.tool.name, l.scope.touched);
+        if (ents.length && l.vendor && hiddenEnt.has(l.vendor)) { fail("ADMISSION", "line " + l.seq + " is shown, and the " + l.vendor + " entitlement it is checked against is hidden"); break; }
+        const sc = ents.length ? { ...a.scope, datasets: entOf[l.vendor] || [] } : a.scope;
+        const want = checkScope(sc, l.tool.name, l.scope.touched);
         if (canon(want) !== canon(l.scope.outside)) { fail("ADMISSION", "line " + l.seq + " scope check does not match the admission"); break; }
       }
     }
@@ -238,7 +308,9 @@ export function summarize(lines) {
   const s = lines[0] && lines.find(l => l.event === "SessionStart");
   const a = lines.find(l => l.event === "Admission");
   const outside = lines.filter(l => l.event === "PreToolUse" && l.scope && isOutside(l.scope.outside))
-    .map(l => ({ seq: l.seq, tool: l.tool.name, use_id: l.tool.use_id, ran: post.has(l.tool.use_id) || failed.has(l.tool.use_id), failed: failed.has(l.tool.use_id), outside: l.scope.outside }));
+    .map(l => ({ seq: l.seq, tool: l.tool.name, ...(l.vendor ? { vendor: l.vendor } : {}), use_id: l.tool.use_id, ran: post.has(l.tool.use_id) || failed.has(l.tool.use_id), failed: failed.has(l.tool.use_id), outside: l.scope.outside }));
+  const redacted = {};
+  for (const l of lines) if (l.redacted) redacted[l.vendor || "(none)"] = (redacted[l.vendor || "(none)"] || 0) + 1;
   return {
     session: lines[0] && lines[0].session,
     model: s && s.model || null,
@@ -252,5 +324,93 @@ export function summarize(lines) {
     tools_completed: tools,
     admission: a ? { scope: a.scope, labels: a.labels || null, policy_sha256: a.policy_sha256 } : null,
     outside_admission: outside,
+    ...(Object.keys(redacted).length ? { redacted } : {}),
   };
+}
+
+// Answer trail. A turn's last answer is fingerprinted with the line's nonce, and the turn end lists
+// the tool results whose figures the answer repeats. Given the answer text, anyone can redo both
+// for every line shown in full.
+export function checkAnswer(lines, text, c) {
+  const stops = lines.filter(l => !l.redacted && l.answer && typeof l.nonce === "string");
+  const hit = stops.find(l => c.sha256hex(l.nonce + "|" + String(text)) === l.answer.fp);
+  if (!hit) return { ok: false, why: "this answer is not the one recorded at the end of any turn in this record" };
+  const nums = numbersIn(text);
+  const signed = new Map((hit.answer.drew_on || []).map(d => [d.seq, d]));
+  const checked = [];
+  for (const l of lines) {
+    if (l.redacted || l.event !== "PostToolUse" || l.seq > hit.seq || !Array.isArray(l.vals)) continue;
+    const matched = nums.filter(v => l.vals.includes(c.sha256hex(l.nonce + "|" + v))).length;
+    const s = signed.get(l.seq);
+    if ((s ? s.matched : 0) !== matched) return { ok: false, stop_seq: hit.seq, why: "the trail at line " + hit.seq + " says the answer used " + (s ? s.matched : 0) + " figures from line " + l.seq + ", and the answer and that line show " + matched };
+    if (matched) checked.push({ seq: l.seq, vendor: l.vendor, matched });
+  }
+  return { ok: true, stop_seq: hit.seq, drew_on: hit.answer.drew_on || [], checked };
+}
+
+// Licence statement: one vendor's usage over a period, built from that vendor's disclosure copies.
+export const STATEMENT_FORMAT = "hive.licence-statement/1";
+export function statementBody(discs, vendor, period, c) {
+  const sessions = [], usage = {}, outside = [], answers = [];
+  let entitlement = null;
+  for (const lines of discs) {
+    const sfp = c.sha256hex(String(lines[0].session));
+    const last = lines[lines.length - 1];
+    sessions.push({ session_fp: sfp, count: lines.length, head: last.hash });
+    const ent = lines.find(l => l.event === "Entitlement" && l.vendor === vendor && !l.redacted);
+    if (ent && !entitlement) entitlement = ent.datasets;
+    const ran = new Set(lines.filter(l => !l.redacted && l.event === "PostToolUse" && l.vendor === vendor).map(l => l.tool.use_id));
+    for (const l of lines) {
+      if (l.redacted || l.event !== "PreToolUse" || l.vendor !== vendor || !l.scope) continue;
+      const out = new Set((l.scope.outside && l.scope.outside.datasets) || []);
+      for (const d of l.scope.touched.datasets || []) {
+        const u = usage[d] || (usage[d] = { dataset: d, asked: 0, ran: 0, outside: 0 });
+        u.asked++; if (ran.has(l.tool.use_id)) u.ran++; if (out.has(d)) { u.outside++; outside.push({ session_fp: sfp, seq: l.seq, dataset: d }); }
+      }
+    }
+    for (const l of lines) {
+      if (l.redacted || !l.answer) continue;
+      const mine = (l.answer.drew_on || []).filter(d => d.vendor === vendor);
+      if (mine.length) answers.push({ session_fp: sfp, seq: l.seq, drew_on: mine.map(d => d.seq), figures: mine.reduce((a, d) => a + d.matched, 0) });
+    }
+  }
+  sessions.sort((a, b) => a.session_fp < b.session_fp ? -1 : 1);
+  return { v: STATEMENT_FORMAT, vendor, recorder_key: discs[0][0].public_key, period, entitlement, sessions,
+    usage: Object.values(usage).sort((a, b) => a.dataset < b.dataset ? -1 : 1), outside, answers };
+}
+//   st: { ...statementBody, issued_at, sig, accepted?: { vendor_key, accepted_at, sig } }
+//   opts: { recorderPin, vendorPin, witnessPin, memory: { [session_fp]: statements }, witnessSessions: [{ session_fp, count, last_at }] }
+export function checkStatement(st, discs, c, opts = {}) {
+  const no = (step, why) => ({ ok: false, step, why });
+  if (!st || st.v !== STATEMENT_FORMAT) return no("FORMAT", "not a " + STATEMENT_FORMAT);
+  const { sig, accepted, issued_at, ...b } = st;
+  if (opts.recorderPin && st.recorder_key !== opts.recorderPin) return no("SIGNATURE", "the statement names a recorder key other than the pinned one");
+  if (!c.verify(st.recorder_key, canon({ ...b, issued_at }), sig)) return no("SIGNATURE", "the statement's signature does not verify against the recorder key");
+  for (const lines of discs) {
+    const sfp = c.sha256hex(String(lines[0].session));
+    const r = verifyRecord(lines, c, { pin: st.recorder_key, allowRedacted: true, discloseFor: st.vendor, witnessPin: opts.witnessPin, memory: { statements: (opts.memory || {})[sfp] || [], from: opts.from }, requireMemory: true });
+    if (!r.ok) return no("RECORD", "session " + sfp.slice(0, 12) + ": " + r.first_failure.gate + ", " + r.first_failure.why);
+  }
+  const want = statementBody(discs, st.vendor, st.period, c);
+  if (opts.witnessSessions) {
+    const from = Date.parse(st.period.from), to = Date.parse(st.period.to);
+    for (const w of opts.witnessSessions) {
+      const t = Date.parse(w.last_at);
+      if (!(t >= from && t <= to)) continue;
+      const s = st.sessions.find(x => x.session_fp === w.session_fp);
+      if (!s) return no("COMPLETE", "the witness saw session " + w.session_fp.slice(0, 12) + " (" + w.count + " lines) in this period, and the statement leaves it out");
+      if (s.count < w.count) return no("COMPLETE", "the witness saw " + w.count + " lines for session " + w.session_fp.slice(0, 12) + ", and the statement covers " + s.count);
+    }
+  }
+  for (const k of ["sessions", "entitlement", "usage", "outside", "answers"]) {
+    if (canon(want[k]) !== canon(b[k])) return no("USAGE", "the statement's " + k + " does not match what the records show");
+  }
+  let acc = null;
+  if (accepted) {
+    const ok = c.verify(accepted.vendor_key, canon({ statement_sha256: c.sha256hex(canon({ ...b, issued_at, sig })), accepted_at: accepted.accepted_at }), accepted.sig);
+    if (!ok || (opts.vendorPin && accepted.vendor_key !== opts.vendorPin)) return no("ACCEPTED", "the vendor's acceptance does not match this statement");
+    acc = accepted.accepted_at;
+  }
+  const tot = want.usage.reduce((a, u) => ({ asked: a.asked + u.asked, outside: a.outside + u.outside }), { asked: 0, outside: 0 });
+  return { ok: true, vendor: st.vendor, sessions: want.sessions.length, ...tot, answers: want.answers.length, accepted_at: acc };
 }

@@ -158,9 +158,10 @@ A checker runs these in order and reports the first failure.
 | `FORMAT` | Every line is a `hive.agent-action/1` line, and line 0 is `RecorderKey`. |
 | `KEY_PIN` | The record's public key equals the pinned key, if one was supplied, and every line names the same `key_id`. |
 | `CHAIN_ORDER` | `seq` runs 0, 1, 2 and each `prev` equals the previous `hash`. |
-| `ENTRY_HASH` | Each `hash` equals SHA-256 of the canonical body. |
+| `ENTRY_HASH` | Each `hash` equals SHA-256 of the canonical body, or of the digest form for a split line. |
 | `SIGNATURE` | Each `sig` verifies under the record's public key. |
 | `PQ_SIGNATURE` | When `RecorderKey` names a `pq_public_key`, every line has a `sig_pq` that verifies under it. `NONE` otherwise. |
+| `DISCLOSURE` | A copy with digest-only lines is checked as a disclosure, and no line of the vendor it was made for is hidden. `NONE` for a full record. |
 | `SEAL` | Each `Seal` has `count` equal to its `seq` and `head` equal to the previous line's `hash`. |
 | `ADMISSION` | When there is an `Admission` line, it is line 1 and appears once, its `policy_sha256` and `scope` match the policy the checker was given (if any), every `PreToolUse` carries a scope check, and every recorded `outside` equals the checker's own result. `NONE` when there is no admission. |
 | `WITNESS` | Each witness statement verifies under the pinned witness key, names this recorder key, and its `head` is the hash of line `count - 1` of this record. `NONE` when there are no statements. |
@@ -222,6 +223,32 @@ It stores the same four fingerprints it was sent, its own time, its key and its 
 ### Strict checking
 
 `--strict` turns on all of: statements required, every line covered, lag at most 10 seconds, a timestamp required, and the record must end with `SessionEnd` and a seal. A reviewer who wasn't there should check with `--strict`.
+
+## Sharing with more than one party (1.3)
+
+### Split lines
+
+A line with `"form": "split"` is hashed and signed over its digest form instead of its full body. The digest form keeps the public fields `v`, `seq`, `prev`, `t`, `key`, `event`, `session`, `form` and `vendor` as they are, and replaces every other field with one field, `private_fp`: SHA-256 of the canonical form of those other fields. Every split line carries a random 16-byte `nonce` among its private fields, so `private_fp` can't be guessed from a short value.
+
+A copy of a record may show a split line as its digest form only: the public fields, `private_fp`, `hash`, `sig`, `sig_pq` and `"redacted": true`. That line still hashes, still signs, still chains and still matches what the witness saw. What it says stays private. A verifier rejects a copy with digest-only lines unless it was asked to check a disclosure (gate `DISCLOSURE`).
+
+The recorder writes split lines when the admission has `entitlements`, or when `HIVE_SPLIT=1`. Tool calls, prompts and turn ends are split. The recorder key, admission, seals, session start and session end are not.
+
+### Vendors and entitlements
+
+`vendor` is the MCP server in a tool name `mcp__<server>__<tool>`. An admission may give `entitlements`: one list of dataset globs per vendor. The recorder writes one `Entitlement` line per vendor, split, directly after the admission. A pull through a vendor's tool is checked against that vendor's entitlement only. The verifier re-runs the check against the entitlement lines it can see, and fails a shown pull whose entitlement is hidden.
+
+### Disclosure for one vendor
+
+A copy made for vendor V shows every line of V in full, every turn end, and every unsplit line, and shows all other split lines as digest form. Checked with `discloseFor: V`, it fails if any line of V is hidden. Two vendors get two copies of the same session. Both check against the same witness memory, and neither shows the other's lines.
+
+### Answer trail
+
+A `PostToolUse` split line carries `vals`: SHA-256 of `nonce + "|" + figure` for each figure in the tool result. A turn end carries `answer.fp`, SHA-256 of `nonce + "|" + the answer text`, and `answer.drew_on`: each earlier result the answer repeats figures from, with its `seq`, `vendor` and how many figures matched. Figures are numbers, with commas removed, and integers under 100 and from 1900 to 2100 skipped. The recorder matches keyed fingerprints and never sees the figures. Given the answer text, anyone holding a copy can redo the fingerprint and every match for the lines shown in full.
+
+### Licence statement
+
+`hive.licence-statement/1` sums one vendor's usage over a period from that vendor's copies: sessions (fingerprint, line count, last hash), the entitlement, pulls per dataset (asked, ran, outside), each pull outside the entitlement, and each answer that drew on the vendor's data. It is signed with the recorder key. The vendor may accept it by signing `{ statement_sha256, accepted_at }` with its own key. A checker rebuilds every number from the copies, checks every copy against the witness's memory, and asks the witness for every session it remembers for that recorder key in the period (`GET /v1/witness/sessions?recorder_key=&from=&to=`). A session the witness saw and the statement leaves out fails the check.
 
 ## Limits
 
