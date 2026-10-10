@@ -109,6 +109,6 @@ The record format is `hive.agent-action/1`. The spec is in `spec/SPEC.md` and th
 
 ## Limits
 
-A record proves what the runtime reported, in what order, and that it didn't change afterwards. It does not prove an action was right or authorized, and it can't include events the runtime never reported. In plugin mode the keys sit on the agent's machine; in service mode they don't. The witness keeps nothing yet, so a record rebuilt from scratch later, with every time faked, is caught by the public timestamps or by knowing when the session ran. The scope check only sees what a tool's input names: a host reached by a program the agent starts is not seen. Every line is signed with Ed25519; ML-DSA-65 is optional.
+A record proves what the runtime reported, in what order, and that it didn't change afterwards. It does not prove an action was right or authorized, and it can't include events the runtime never reported. In plugin mode the keys sit on the agent's machine; in service mode they don't. The witness keeps nothing yet, so a record rebuilt from scratch later, with every time faked, has to show when it was really rebuilt, because the public timestamps carry a time no party to the session controls. The scope check only sees what a tool's input names: a host reached by a program the agent starts is not seen. Every line is signed with Ed25519; ML-DSA-65 is optional.
 
 MIT licensed. Hive, https://thehiveryiq.com

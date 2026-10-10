@@ -191,6 +191,11 @@ export function verifyRecord(lines, c, opts = {}) {
     const covered = lines[t.count - 1];
     if (!t.ok) { fail("TIMESTAMP", "the timestamp token for line " + (t.count - 1) + " does not verify" + (t.why ? ": " + t.why : "")); break; }
     if (!covered || covered.hash !== t.head) { fail("TIMESTAMP", "a timestamp authority saw " + t.count + " lines ending in " + String(t.head).slice(0, 12) + ", and this record no longer has that"); break; }
+    if (opts.maxLagSec !== undefined && t.gen_time) {
+      // RFC 3161 times are often whole seconds, so allow one second either way.
+      const d = (Date.parse(t.gen_time) - Date.parse(covered.t)) / 1000;
+      if (d > opts.maxLagSec + 1 || d < -1.5) { fail("TIMESTAMP", "the timestamp authority's time for line " + (t.count - 1) + " is " + Math.round(d) + " s from the time the line claims"); break; }
+    }
     res.timestamps.push({ count: t.count, at: t.gen_time, tsa: t.tsa });
   }
   if (res.gates.TIMESTAMP !== "FAIL") {

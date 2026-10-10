@@ -1,5 +1,5 @@
 {
-  "recorder_key": "UUq5vw2zX7y8rRpxtogVGDZuZYxQ1EdM0I1LkHAwrns",
-  "witness_key": "BPDfiELhVKfuHQEw6QweMuFCPv_1GBpZHHHdx3eOmEc",
+  "recorder_key": "MTJyxGEHih4WdIUtFpydyADLrCeUmV8ND36eiUCgPi8",
+  "witness_key": "TxKCyN9TuyldGrOI1LM7zMNzGhFNQsldLEq2zpU04ZA",
   "note": "Test keys from tests/run.mjs. The witness here ran locally with a throwaway key."
 }

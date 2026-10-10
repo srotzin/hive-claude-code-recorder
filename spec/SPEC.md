@@ -198,7 +198,7 @@ At the start and at every seal, a producer may send the head hash, and nothing e
 { "v": "hive.agent-action-timestamp/1", "count": 18, "head": "<64 hex>", "tsa": "<url>", "token": "<base64 DER TimeStampResp>" }
 ```
 
-The token's message imprint is SHA-256 with the head's 32 bytes as the hashed message. A checker verifies it with `openssl ts -verify -digest <head> -in <token> -CAfile <system CAs>` and checks the head is in the chain at `count`. No Hive key is involved in this gate.
+The token's message imprint is SHA-256 with the head's 32 bytes as the hashed message. A checker verifies it with `openssl ts -verify -digest <head> -in <token> -CAfile <system CAs>` and checks the head is in the chain at `count`, and that the authority's time is within the lag of that line's time. No Hive key is involved in this gate.
 
 ### Service mode: keys outside the agent's reach
 
@@ -212,7 +212,7 @@ The token's message imprint is SHA-256 with the head's 32 bytes as the hashed me
 
 - The record is only as complete as the runtime's hooks. Events the runtime does not report are not recorded.
 - Someone holding the recorder key can write a new, consistent record from scratch. Witness statements catch that for every line they cover, and with witnessing before every call that is every line. In plugin mode the keys sit on the agent's machine. In service mode they don't.
-- The witness keeps nothing in version 1.2, so its statements travel with the record. A checker that requires them (`--strict`) fails a record handed over without them. A record fully rebuilt later, with fresh statements and fresh times, passes lag checks if every line time was faked to match, and is caught only by knowing when the session really ran, by the public timestamps, or by a witness that remembers what it signed.
+- The witness keeps nothing in version 1.2, so its statements travel with the record. A checker that requires them (`--strict`) fails a record handed over without them. A record fully rebuilt later, with fresh statements and fresh times, has to carry the time it was really rebuilt: the public timestamps' times must sit within the lag of each covered line. It is caught by anyone who knows when the session really ran, or by a witness that remembers what it signed.
 - The recorder clock is the machine's clock. The witness clock is the witness's. A timestamp authority's clock is its own, and is the only one no party to the session controls.
 - When Hive runs the witness, Hive holds the witness key. It is a second party to the customer, not an independent auditor. An organization can run its own witness from `witness/server.mjs`, or use one run by an auditor.
 - Every line is signed with Ed25519. The ML-DSA-65 signature is optional. The witness signs with Ed25519 only.
