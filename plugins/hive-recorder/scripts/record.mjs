@@ -202,7 +202,7 @@ export function appendDesc(sessionId, desc, touched, { dir = DATA, admission = n
       out.push(line); last = line;
     };
     if (!last) {
-      write({ event: "RecorderKey", session: sessionId, public_key: keys.pub, key_id: keys.keyId, recorder: "hive-recorder/1.2.0", ...(pq ? { pq_alg: "ML-DSA-65", pq_public_key: pq.pub } : {}) });
+      write({ event: "RecorderKey", session: sessionId, public_key: keys.pub, key_id: keys.keyId, recorder: "hive-recorder/1.2.1", ...(pq ? { pq_alg: "ML-DSA-65", pq_public_key: pq.pub } : {}) });
       if (adm) write({ event: "Admission", session: sessionId, scope: adm.scope, labels: adm.policy.labels || undefined, fp_purpose: fp(keys.fk, adm.policy.purpose), policy_sha256: sha256hex(canon(adm.policy)) });
     }
     const d = { ...desc, session: sessionId };
