@@ -56,7 +56,7 @@ export function scopeOf(p) {
 }
 export function isOutside(o) { return !!(o && (o.tool || (o.paths && o.paths.length) || (o.hosts && o.hosts.length))); }
 
-export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATURE", "PQ_SIGNATURE", "SEAL", "ADMISSION", "WITNESS"];
+export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATURE", "PQ_SIGNATURE", "SEAL", "ADMISSION", "WITNESS", "TIMESTAMP"];
 
 // Verify one session record.
 //   lines:    array of parsed JSON lines
@@ -64,7 +64,14 @@ export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATU
 //               verifyPq?(pubB64url, msgStr, sigB64url) -> bool  (ML-DSA-65, optional) }
 //   opts:     { pin: public key (b64url) expected, witnesses: [statements], witnessPin: b64url,
 //               admissionPin: sha256 of the canonical admission policy the reviewer expects,
-//               admissionScope: the scope that policy gives, from scopeOf(policy) }
+//               admissionScope: the scope that policy gives, from scopeOf(policy),
+//               witnessPins: [b64url] witness keys accepted (any of them),
+//               minWitnesses: how many different pinned witnesses must have signed (default 0),
+//               maxLagSec: a statement signed longer than this after its line was written fails,
+//               requireWitness: no statements is a failure, not NONE,
+//               requireFullCoverage: every line, up to the last, must be covered by a statement,
+//               timestamps: [{ count, head, ok, gen_time, tsa }] RFC 3161 tokens already checked by the caller,
+//               requireTimestamp: no timestamp is a failure, not NONE }
 export function verifyRecord(lines, c, opts = {}) {
   const res = { ok: false, gates: {}, first_failure: null, entries: lines.length, summary: null };
   const fail = (g, why) => { if (!res.first_failure) res.first_failure = { gate: g, why }; res.gates[g] = "FAIL"; };
@@ -140,20 +147,51 @@ export function verifyRecord(lines, c, opts = {}) {
 
   // WITNESS: each statement must sign a head that is in this chain at that count.
   const ws = opts.witnesses || [];
+  const pins = [...(opts.witnessPins || []), ...(opts.witnessPin ? [opts.witnessPin] : [])];
   res.witnessed = [];
+  const seenKeys = new Set();
+  let maxCount = 0, maxLag = 0;
   for (const w of ws) {
     const { sig, ...st } = w;
     if (st.v !== WITNESS_FORMAT) { fail("WITNESS", "witness statement has the wrong format"); break; }
-    if (opts.witnessPin && st.witness_key !== opts.witnessPin) { fail("WITNESS", "witness statement signed by an unpinned witness key"); break; }
+    if (pins.length && !pins.includes(st.witness_key)) { fail("WITNESS", "witness statement signed by an unpinned witness key"); break; }
     if (st.recorder_key !== pub) { fail("WITNESS", "witness statement names another recorder key"); break; }
     if (!c.verify(st.witness_key, canon(st), sig)) { fail("WITNESS", "witness signature does not verify"); break; }
     const covered = lines[st.count - 1];
     if (!covered || covered.hash !== st.head) {
       fail("WITNESS", "the witness saw " + st.count + " lines ending in " + st.head.slice(0, 12) + ", and this record no longer has that"); break;
     }
-    res.witnessed.push({ count: st.count, at: st.witnessed_at });
+    const lag = (Date.parse(st.witnessed_at) - Date.parse(covered.t)) / 1000;
+    if (opts.maxLagSec !== undefined && !(lag <= opts.maxLagSec)) {
+      fail("WITNESS", "line " + (st.count - 1) + " was witnessed " + Math.round(lag) + " s after it was written, more than the " + opts.maxLagSec + " s allowed"); break;
+    }
+    if (lag > maxLag) maxLag = lag;
+    seenKeys.add(st.witness_key);
+    if (st.count > maxCount) maxCount = st.count;
+    res.witnessed.push({ count: st.count, at: st.witnessed_at, by: st.witness_key, lag_s: Math.round(lag * 10) / 10 });
   }
-  if (ws.length) pass("WITNESS"); else res.gates.WITNESS = "NONE";
+  res.witness_coverage = { lines_witnessed: maxCount, entries: lines.length, unwitnessed_tail: lines.length - maxCount, witnesses: seenKeys.size, max_lag_s: Math.round(maxLag * 10) / 10 };
+  if (res.gates.WITNESS !== "FAIL") {
+    if (!ws.length) { if (opts.requireWitness || opts.minWitnesses) fail("WITNESS", "no witness statements were supplied, and this check requires them"); else res.gates.WITNESS = "NONE"; }
+    else if (opts.minWitnesses && seenKeys.size < opts.minWitnesses) fail("WITNESS", "only " + seenKeys.size + " different witnesses signed, and this check requires " + opts.minWitnesses);
+    else if (opts.requireFullCoverage && maxCount < lines.length) fail("WITNESS", "the last " + (lines.length - maxCount) + " lines were never witnessed");
+    else pass("WITNESS");
+  }
+
+  // TIMESTAMP: RFC 3161 tokens from a public timestamp authority, checked by the caller
+  // (the token signature needs a CMS library). Here: each one must cover a head in this chain.
+  const ts = opts.timestamps || [];
+  res.timestamps = [];
+  for (const t of ts) {
+    const covered = lines[t.count - 1];
+    if (!t.ok) { fail("TIMESTAMP", "the timestamp token for line " + (t.count - 1) + " does not verify" + (t.why ? ": " + t.why : "")); break; }
+    if (!covered || covered.hash !== t.head) { fail("TIMESTAMP", "a timestamp authority saw " + t.count + " lines ending in " + String(t.head).slice(0, 12) + ", and this record no longer has that"); break; }
+    res.timestamps.push({ count: t.count, at: t.gen_time, tsa: t.tsa });
+  }
+  if (res.gates.TIMESTAMP !== "FAIL") {
+    if (!ts.length) { if (opts.requireTimestamp) fail("TIMESTAMP", "no timestamp tokens were supplied, and this check requires them"); else res.gates.TIMESTAMP = "NONE"; }
+    else pass("TIMESTAMP");
+  }
 
   res.ok = !Object.values(res.gates).includes("FAIL");
   res.summary = summarize(lines);

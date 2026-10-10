@@ -165,17 +165,22 @@ export function describe(ev, fk, scope) {
   return d;
 }
 
-export function append(ev, dir = DATA, now = () => new Date().toISOString()) {
+// Append one described event to a session record. Used by the hook (local mode) and by
+// recorderd (service mode, where the keys and the record live outside the agent's reach).
+//   desc:    output of describe(ev, fk, null)
+//   touched: touchedBy(ev) for PreToolUse, else null
+//   opts:    { dir, admission: { policy, scope } | null (read once, when the record starts), now }
+export function appendDesc(sessionId, desc, touched, { dir = DATA, admission = null, now = () => new Date().toISOString() } = {}) {
   const keys = loadKeys(dir);
   const rd = path.join(dir, "records"); fs.mkdirSync(rd, { recursive: true });
-  const file = path.join(rd, safeId(ev.session_id) + ".jsonl");
+  const file = path.join(rd, safeId(sessionId) + ".jsonl");
   const metaFile = file.replace(/\.jsonl$/, ".meta.json");
   return withLock(file, () => {
     const out = [];
     let last = lastLine(file);
-    let meta = null, adm = null;
+    let meta = null;
+    const adm = !last ? admission : null;
     if (!last) {
-      try { adm = loadAdmission(ev.cwd); } catch (e) { logError(e); }
       meta = { pq: process.env.HIVE_PQ === "1", scope: adm ? adm.scope : null };
       fs.writeFileSync(metaFile, JSON.stringify(meta));
     } else {
@@ -192,33 +197,81 @@ export function append(ev, dir = DATA, now = () => new Date().toISOString()) {
       out.push(line); last = line;
     };
     if (!last) {
-      write({ event: "RecorderKey", session: ev.session_id, public_key: keys.pub, key_id: keys.keyId, recorder: "hive-recorder/1.1.0", ...(pq ? { pq_alg: "ML-DSA-65", pq_public_key: pq.pub } : {}) });
-      if (adm) write({ event: "Admission", session: ev.session_id, scope: adm.scope, labels: adm.policy.labels || undefined, fp_purpose: fp(keys.fk, adm.policy.purpose), policy_sha256: sha256hex(canon(adm.policy)) });
+      write({ event: "RecorderKey", session: sessionId, public_key: keys.pub, key_id: keys.keyId, recorder: "hive-recorder/1.2.0", ...(pq ? { pq_alg: "ML-DSA-65", pq_public_key: pq.pub } : {}) });
+      if (adm) write({ event: "Admission", session: sessionId, scope: adm.scope, labels: adm.policy.labels || undefined, fp_purpose: fp(keys.fk, adm.policy.purpose), policy_sha256: sha256hex(canon(adm.policy)) });
     }
-    write(describe(ev, keys.fk, meta.scope));
+    const d = { ...desc, session: sessionId };
+    if (meta.scope && touched && d.event === "PreToolUse" && d.tool) d.scope = { touched, outside: checkScope(meta.scope, d.tool.name, touched) };
+    write(d);
     // Seal at the end of each turn and at session end.
-    if (ev.hook_event_name === "Stop" || ev.hook_event_name === "SessionEnd") write({ event: "Seal", session: ev.session_id, count: last.seq + 1, head: last.hash });
-    return { file, lines: out, keys };
+    if (d.event === "Stop" || d.event === "SessionEnd") write({ event: "Seal", session: sessionId, count: last.seq + 1, head: last.hash });
+    return { file, lines: out, keys, last };
   });
 }
 
-// Send the latest seal head (fingerprints only) to the witness in a detached process,
-// so a slow or offline witness never holds up Claude Code.
-function witnessLater(file, seal, keys) {
-  const url = process.env.HIVE_WITNESS_URL ?? "https://witness.thehiveryiq.com/v1/witness";
-  if (!url || url === "off") return;
-  const req = { recorder_key: keys.pub, session_fp: sha256hex(String(seal.session)), count: seal.count, head: seal.head };
-  const child = spawn(process.execPath, [path.join(HERE, "witness-client.mjs"), url, file.replace(/\.jsonl$/, ".witness.jsonl"), JSON.stringify(req)], { detached: true, stdio: "ignore" });
+export function append(ev, dir = DATA, now) {
+  const keys = loadKeys(dir);
+  const first = !fs.existsSync(path.join(dir, "records", safeId(ev.session_id) + ".jsonl"));
+  let admission = null;
+  if (first) { try { admission = loadAdmission(ev.cwd); } catch (e) { logError(e); } }
+  return appendDesc(ev.session_id, describe(ev, keys.fk, null), ev.hook_event_name === "PreToolUse" ? touchedBy(ev) : null, { dir, admission, now });
+}
+
+// Which outside parties see the head after this append.
+//   Witnesses (HIVE_WITNESS_URL, comma separated): at the start, before every tool call runs, and at every seal.
+//   Timestamp authorities (HIVE_TSA_URL, comma separated, RFC 3161): at the start and at every seal.
+const list = v => String(v).split(",").map(x => x.trim()).filter(x => x && x !== "off");
+export function outsideJob(r) {
+  const evs = r.lines.map(l => l.event);
+  const start = evs.includes("RecorderKey"), seal = evs.includes("Seal"), pre = evs.includes("PreToolUse");
+  if (!start && !seal && !pre) return null;
+  const witnesses = list(process.env.HIVE_WITNESS_URL ?? "https://witness.thehiveryiq.com/v1/witness");
+  const tsas = (start || seal) ? list(process.env.HIVE_TSA_URL ?? "http://timestamp.digicert.com") : [];
+  if (!witnesses.length && !tsas.length) return null;
+  const req = { recorder_key: r.keys.pub, session_fp: sha256hex(String(r.last.session)), count: r.last.seq + 1, head: r.last.hash };
+  return { base: r.file.replace(/\.jsonl$/, ""), req, witnesses, tsas };
+}
+
+// Detached by default, so a slow or offline witness never holds up Claude Code.
+// HIVE_WITNESS_WAIT_MS > 0 waits up to that long for the statements before the hook returns,
+// so they exist before the tool call runs. It still never blocks or fails the call.
+export async function sendOutside(job) {
+  if (!job) return;
+  const wait = Number(process.env.HIVE_WITNESS_WAIT_MS || 0);
+  if (wait > 0) {
+    const { sendAll } = await import("./witness-client.mjs");
+    await Promise.race([sendAll({ ...job, timeoutMs: wait, tries: 1 }), new Promise(r => setTimeout(r, wait))]);
+    return;
+  }
+  const child = spawn(process.execPath, [path.join(HERE, "witness-client.mjs"), JSON.stringify(job)], { detached: true, stdio: "ignore" });
   child.unref();
+}
+
+// Service mode: HIVE_RECORDER_URL points at recorderd, run by whoever starts the agent, somewhere the
+// agent can't read. The hook keeps only the fingerprint key; it sends fingerprints and touched
+// paths and hosts, never content. The agent can add lines through the hook. It can't change,
+// reorder or remove one, because it never holds the signing keys or the record.
+async function sendToService(ev) {
+  const fk = loadFingerprintKey();
+  const body = JSON.stringify({ session_id: ev.session_id, desc: describe(ev, fk, null), touched: ev.hook_event_name === "PreToolUse" ? touchedBy(ev) : null });
+  try {
+    const r = await fetch(process.env.HIVE_RECORDER_URL.replace(/\/$/, "") + "/v1/event", { method: "POST", headers: { "content-type": "application/json" }, body, signal: AbortSignal.timeout(Number(process.env.HIVE_RECORDER_TIMEOUT_MS || 3000)) });
+    if (!r.ok) throw new Error("recorderd HTTP " + r.status);
+  } catch (e) { logError(e); }
+}
+function loadFingerprintKey(dir = DATA) {
+  const kd = path.join(dir, "keys"); fs.mkdirSync(kd, { recursive: true, mode: 0o700 });
+  const f = path.join(kd, "fingerprint.key");
+  if (!fs.existsSync(f)) { const tmp = f + "." + process.pid; fs.writeFileSync(tmp, crypto.randomBytes(32).toString("hex"), { mode: 0o600 }); try { fs.linkSync(tmp, f); } catch {} fs.unlinkSync(tmp); }
+  return Buffer.from(fs.readFileSync(f, "utf8").trim(), "hex");
 }
 
 async function main() {
   let raw = "";
   for await (const chunk of process.stdin) raw += chunk;
   const ev = JSON.parse(raw);
-  const r = append(ev);
-  const seal = r.lines.find(l => l.event === "Seal");
-  if (seal) witnessLater(r.file, seal, r.keys);
+  if (process.env.HIVE_RECORDER_URL) return sendToService(ev);
+  await sendOutside(outsideJob(append(ev)));
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

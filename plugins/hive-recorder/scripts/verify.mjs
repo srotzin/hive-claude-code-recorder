@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 // Check a hive.agent-action/1 record offline. Node 20 or later, no dependencies.
 //
-//   node verify.mjs <session.jsonl> [--key <key.json | public key>] [--witness <file>] [--witness-key <key>] [--admission <policy.json>] [--json]
+//   node verify.mjs <session.jsonl> [--key <key.json | public key>] [--witness <file>] [--witness-key <key>]...
+//                   [--min-witnesses <n>] [--max-lag <seconds>] [--require-witness] [--full-coverage]
+//                   [--timestamps <file>] [--require-timestamp] [--admission <policy.json>] [--json]
+//   --witness-key can be given more than once. --min-witnesses counts different pinned witnesses.
+//   Timestamp tokens (RFC 3161) are checked with the openssl command and your system's CA certificates.
 //   node verify.mjs reveal <session.jsonl> --seq <n> --field <input|response|error|prompt|last_message> --value <file> --fingerprint-key <file>
 //
 // Exit code 0: every gate passes and nothing fell outside the admission.
@@ -12,6 +16,8 @@ import crypto from "node:crypto";
 import { verifyRecord, canon, GATES, scopeOf } from "./core.mjs";
 import { ml_dsa65 } from "./vendor/ml-dsa-65.mjs";
 import path from "node:path";
+import os from "node:os";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const c = {
@@ -29,13 +35,43 @@ const c = {
 const readLines = f => fs.readFileSync(f, "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l));
 const keyArg = v => { if (!v) return undefined; if (fs.existsSync(v)) { const j = JSON.parse(fs.readFileSync(v, "utf8")); return j.public_key || j.witness_key; } return v; };
 function opt(args, name) { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; }
+function opts(args, name) { return args.flatMap((a, i) => a === name && args[i + 1] ? [args[i + 1]] : []); }
+const FLAGS = new Set(["--json", "--require-witness", "--full-coverage", "--require-timestamp"]);
 
-export function verifyFile(file, { key, witness, witnessKey, admission } = {}) {
+// Check RFC 3161 timestamp tokens with openssl: the token must be signed by a TSA certificate that
+// chains to a CA your system trusts, and must cover exactly this head hash.
+const CA_FILES = ["/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/cert.pem", "/opt/homebrew/etc/openssl@3/cert.pem", "/usr/local/etc/openssl@3/cert.pem"];
+export function checkTimestamps(entries, caFile) {
+  const ca = caFile || CA_FILES.find(f => fs.existsSync(f));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hive-tsa-"));
+  try {
+    return entries.map((t, i) => {
+      const f = path.join(tmp, i + ".tsr");
+      fs.writeFileSync(f, Buffer.from(t.token, "base64"));
+      if (!ca) return { ...t, ok: false, why: "no CA certificate bundle found; pass --ca-file" };
+      const v = spawnSync("openssl", ["ts", "-verify", "-digest", t.head, "-in", f, "-CAfile", ca], { encoding: "utf8" });
+      if (v.error) return { ...t, ok: false, why: "openssl is not installed" };
+      const ok = /Verification: OK/.test(v.stdout + v.stderr);
+      const txt = spawnSync("openssl", ["ts", "-reply", "-in", f, "-text"], { encoding: "utf8" }).stdout || "";
+      const m = txt.match(/Time stamp: (.+)/);
+      return { ...t, ok, why: ok ? undefined : (v.stderr || v.stdout).trim().split("\n").pop(), gen_time: m ? new Date(m[1]).toISOString() : undefined };
+    });
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
+
+export function verifyFile(file, { key, witness, witnessKey, witnessKeys, minWitnesses, maxLag, requireWitness, fullCoverage, timestamps, requireTimestamp, caFile, admission } = {}) {
   const lines = readLines(file);
   const wf = witness || file.replace(/\.jsonl$/, ".witness.jsonl");
   const witnesses = fs.existsSync(wf) && wf !== file ? readLines(wf) : [];
+  const tf = timestamps || file.replace(/\.jsonl$/, ".timestamps.jsonl");
+  const ts = fs.existsSync(tf) && tf !== file ? checkTimestamps(readLines(tf), caFile) : [];
   const pol = admission ? JSON.parse(fs.readFileSync(admission, "utf8")) : null;
-  return verifyRecord(lines, c, { pin: keyArg(key), witnesses, witnessPin: keyArg(witnessKey), admissionPin: pol ? c.sha256hex(canon(pol)) : undefined, admissionScope: pol ? scopeOf(pol) : undefined });
+  const pins = [...(witnessKeys || []), ...(witnessKey ? [witnessKey] : [])].map(keyArg);
+  return verifyRecord(lines, c, {
+    pin: keyArg(key), witnesses, witnessPins: pins, minWitnesses, maxLagSec: maxLag, requireWitness, requireFullCoverage: fullCoverage,
+    timestamps: ts, requireTimestamp,
+    admissionPin: pol ? c.sha256hex(canon(pol)) : undefined, admissionScope: pol ? scopeOf(pol) : undefined,
+  });
 }
 
 function reveal(args) {
@@ -53,12 +89,19 @@ function reveal(args) {
 function main() {
   const args = process.argv.slice(2);
   if (args[0] === "reveal") return reveal(args);
-  const files = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--")));
-  if (!files.length) { console.log("usage: node verify.mjs <session.jsonl> [--key key.json] [--witness file] [--witness-key key] [--json]"); process.exitCode = 2; return; }
+  const files = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--") && !FLAGS.has(args[i - 1])));
+  if (!files.length) { console.log("usage: node verify.mjs <session.jsonl> [--key key.json] [--witness-key key]... [--min-witnesses n] [--max-lag s] [--require-witness] [--full-coverage] [--require-timestamp] [--admission policy.json] [--json]"); process.exitCode = 2; return; }
   let bad = 0, outside = 0;
   for (const f of files) {
     let r;
-    try { r = verifyFile(f, { key: opt(args, "--key"), witness: opt(args, "--witness"), witnessKey: opt(args, "--witness-key"), admission: opt(args, "--admission") }); }
+    try { r = verifyFile(f, {
+      key: opt(args, "--key"), witness: opt(args, "--witness"), witnessKeys: opts(args, "--witness-key"),
+      minWitnesses: opt(args, "--min-witnesses") ? Number(opt(args, "--min-witnesses")) : undefined,
+      maxLag: opt(args, "--max-lag") ? Number(opt(args, "--max-lag")) : undefined,
+      requireWitness: args.includes("--require-witness"), fullCoverage: args.includes("--full-coverage"),
+      timestamps: opt(args, "--timestamps"), requireTimestamp: args.includes("--require-timestamp"), caFile: opt(args, "--ca-file"),
+      admission: opt(args, "--admission"),
+    });  }
     catch (e) { r = { ok: false, gates: { FORMAT: "FAIL" }, first_failure: { gate: "FORMAT", why: String(e.message) } }; }
     if (!r.ok) bad++;
     else if (r.summary && r.summary.outside_admission.length) outside++;
@@ -68,7 +111,8 @@ function main() {
     if (r.first_failure) console.log(`  first failure: ${r.first_failure.gate}, ${r.first_failure.why}`);
     if (r.ok && r.summary) {
       const s = r.summary;
-      console.log(`  ${r.entries} lines, ${r.sealed ? "sealed" : "open tail of " + r.open_tail + " lines"}, witnessed ${r.witnessed.length} time(s)`);
+      console.log(`  ${r.entries} lines, ${r.sealed ? "sealed" : "open tail of " + r.open_tail + " lines"}, witnessed ${r.witnessed.length} time(s) by ${r.witness_coverage.witnesses} witness(es), last ${r.witness_coverage.unwitnessed_tail} line(s) unwitnessed, slowest witness ${r.witness_coverage.max_lag_s} s`);
+      if (r.timestamps.length) console.log(`  public timestamps: ${r.timestamps.map(t => "line " + (t.count - 1) + " at " + t.at + " by " + t.tsa).join("; ")}`);
       console.log(`  prompts ${s.prompts}, turns ${s.turns}, tool calls asked ${s.tool_calls_asked}, completed ${s.tool_calls_completed}, failed ${s.tool_calls_failed}, asked with no outcome ${s.asked_without_outcome.length}`);
       console.log(`  tools completed: ${Object.entries(s.tools_completed).map(([k, v]) => k + " " + v).join(", ") || "none"}`);
       if (s.admission) {

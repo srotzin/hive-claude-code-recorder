@@ -17,11 +17,11 @@ const check = (name, ok, detail = "") => { results.push({ name, ok: !!ok, detail
 const tmp = p => fs.mkdtempSync(path.join(os.tmpdir(), p));
 
 function hook(ev, dir, extraEnv = {}) {
-  const r = spawnSync(process.execPath, [REC], { input: JSON.stringify(ev), env: { ...process.env, HIVE_RECORDER_DIR: dir, HIVE_WITNESS_URL: "off", ...extraEnv }, encoding: "utf8" });
+  const r = spawnSync(process.execPath, [REC], { input: JSON.stringify(ev), env: { ...process.env, HIVE_RECORDER_DIR: dir, HIVE_WITNESS_URL: "off", HIVE_TSA_URL: "off", ...extraEnv }, encoding: "utf8" });
   return { code: r.status, out: r.stdout, err: r.stderr };
 }
 function hookAsync(ev, dir) {
-  return new Promise(res => { const p = spawn(process.execPath, [REC], { env: { ...process.env, HIVE_RECORDER_DIR: dir, HIVE_WITNESS_URL: "off" } }); let out = ""; p.stdout.on("data", d => out += d); p.on("close", code => res({ code, out })); p.stdin.end(JSON.stringify(ev)); });
+  return new Promise(res => { const p = spawn(process.execPath, [REC], { env: { ...process.env, HIVE_RECORDER_DIR: dir, HIVE_WITNESS_URL: "off", HIVE_TSA_URL: "off" } }); let out = ""; p.stdout.on("data", d => out += d); p.on("close", code => res({ code, out })); p.stdin.end(JSON.stringify(ev)); });
 }
 
 // The payload shapes below follow Claude Code's hooks reference (code.claude.com/docs/en/hooks).
@@ -74,7 +74,7 @@ check("reveal: a different amount does not match", rv2.status === 1);
 const ro = tmp("hive-ro-"); fs.chmodSync(ro, 0o500);
 const rf = hook(events[2], path.join(ro, "nested"));
 check("unwritable storage: still exits 0, prints nothing", rf.code === 0 && rf.out === "", "exit " + rf.code);
-const rg = spawnSync(process.execPath, [REC], { input: "not json", env: { ...process.env, HIVE_RECORDER_DIR: tmp("hive-bad-"), HIVE_WITNESS_URL: "off" }, encoding: "utf8" });
+const rg = spawnSync(process.execPath, [REC], { input: "not json", env: { ...process.env, HIVE_RECORDER_DIR: tmp("hive-bad-"), HIVE_WITNESS_URL: "off", HIVE_TSA_URL: "off" }, encoding: "utf8" });
 check("malformed input: still exits 0, prints nothing", rg.status === 0 && rg.stdout === "");
 
 // 5. Parallel hooks: Claude Code runs matching hooks in parallel. 40 at once must chain cleanly.
@@ -94,13 +94,35 @@ check("median hook time under 250 ms", times[12] < 250, `median ${times[12].toFi
 const seed = crypto.randomBytes(32).toString("hex");
 const srv = spawn(process.execPath, [path.join(ROOT, "witness/server.mjs")], { env: { ...process.env, PORT: "18787", WITNESS_ED25519_SEED: seed }, stdio: ["ignore", "pipe", "pipe"] });
 await new Promise(r => srv.stdout.once("data", r));
+// A second witness with its own key, to test requiring more than one.
+const seed2 = crypto.randomBytes(32).toString("hex");
+const srv2 = spawn(process.execPath, [path.join(ROOT, "witness/server.mjs")], { env: { ...process.env, PORT: "18788", WITNESS_ED25519_SEED: seed2 }, stdio: ["ignore", "pipe", "pipe"] });
+await new Promise(r => srv2.stdout.once("data", r));
 const W = tmp("hive-wit-"), WS = "wit-" + crypto.randomUUID();
-for (const ev of events.slice(0, 10)) spawnSync(process.execPath, [REC], { input: JSON.stringify({ ...ev, session_id: WS }), env: { ...process.env, HIVE_RECORDER_DIR: W, HIVE_WITNESS_URL: "http://127.0.0.1:18787/v1/witness" } });
-const wfile = path.join(W, "records", WS + ".witness.jsonl");
-for (let i = 0; i < 50 && !fs.existsSync(wfile); i++) await new Promise(r => setTimeout(r, 100));
+const wev = events.slice(0, 10);
+for (const ev of wev) spawnSync(process.execPath, [REC], { input: JSON.stringify({ ...ev, session_id: WS }), env: { ...process.env, HIVE_RECORDER_DIR: W, HIVE_WITNESS_URL: "http://127.0.0.1:18787/v1/witness,http://127.0.0.1:18788/v1/witness", HIVE_TSA_URL: process.env.HIVE_TEST_TSA || "http://timestamp.digicert.com" } });
+const wfile = path.join(W, "records", WS + ".jsonl").replace(/\.jsonl$/, ".witness.jsonl");
+// Each witness signs at the start, before every tool call and at every seal.
+const want = 2 * (1 + wev.filter(e => e.hook_event_name === "PreToolUse").length + wev.filter(e => e.hook_event_name === "Stop" || e.hook_event_name === "SessionEnd").length);
+const tfile = wfile.replace(/\.witness\.jsonl$/, ".timestamps.jsonl");
+const nlines = f => fs.existsSync(f) ? fs.readFileSync(f, "utf8").split("\n").filter(Boolean).length : 0;
+for (let i = 0; i < 150 && (nlines(wfile) < want || nlines(tfile) < 1); i++) await new Promise(r => setTimeout(r, 100));
 const wkey = (await (await fetch("http://127.0.0.1:18787/v1/witness/key")).json()).witness_key;
-const wr = verifyFile(path.join(W, "records", WS + ".jsonl"), { witnessKey: wkey });
-check("witness: statement saved, verifies against the pinned witness key", wr.ok && wr.gates.WITNESS === "PASS" && wr.witnessed.length === 1, JSON.stringify(wr.gates));
+const wkey2 = (await (await fetch("http://127.0.0.1:18788/v1/witness/key")).json()).witness_key;
+const wrec = path.join(W, "records", WS + ".jsonl");
+const wr = verifyFile(wrec, { witnessKeys: [wkey, wkey2] });
+check("witness: signed at the start, before every tool call and at every seal, by both witnesses", wr.ok && wr.gates.WITNESS === "PASS" && wr.witnessed.length === want && wr.witness_coverage.witnesses === 2, wr.witnessed.length + " of " + want + " " + JSON.stringify(wr.first_failure));
+check("witness: every line, up to the last, is covered (--full-coverage)", verifyFile(wrec, { witnessKeys: [wkey, wkey2], fullCoverage: true }).ok);
+check("witness: two different witnesses required and present (--min-witnesses 2)", verifyFile(wrec, { witnessKeys: [wkey, wkey2], minWitnesses: 2 }).ok);
+const only1 = verifyFile(wrec, { witnessKeys: [wkey], minWitnesses: 2, witness: (() => { const f = wrec + ".one"; fs.writeFileSync(f, fs.readFileSync(wfile, "utf8").split("\n").filter(l => l && JSON.parse(l).witness_key === wkey).join("\n") + "\n"); return f; })() });
+check("witness: only one of two required witnesses is rejected at WITNESS", !only1.ok && only1.first_failure.gate === "WITNESS", only1.first_failure && only1.first_failure.why);
+check("witness: statements signed within 30 s of each line pass --max-lag 30", verifyFile(wrec, { witnessKeys: [wkey, wkey2], maxLag: 30 }).ok);
+const late = verifyFile(wrec, { witnessKeys: [wkey, wkey2], maxLag: -1 });
+check("witness: a statement signed later than allowed is rejected (a record rebuilt later gets late statements)", !late.ok && late.first_failure.gate === "WITNESS" && /witnessed/.test(late.first_failure.why), late.first_failure && late.first_failure.why);
+const nows = verifyFile(wrec, { witness: wrec + ".none", requireWitness: true });
+check("witness: a record handed over without its statements fails when witnessing is required", !nows.ok && nows.first_failure.gate === "WITNESS");
+check("timestamp: RFC 3161 tokens from a public authority verify with openssl and cover heads in the chain", wr.gates.TIMESTAMP === "PASS" && wr.timestamps.length >= 1, JSON.stringify(wr.timestamps) + " " + nlines(tfile));
+srv2.kill();
 const bad = await fetch("http://127.0.0.1:18787/v1/witness", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recorder_key: "x".repeat(43), session_fp: "0".repeat(64), count: 3, head: "0".repeat(64), prompt: "hello" }) });
 check("witness refuses any field beyond the four fingerprints", bad.status === 400);
 
@@ -206,6 +228,30 @@ srv.kill();
   const lr = verifyFile(lf, { witness: lf + ".none" });
   check("scope check rewritten and fully re-signed with both recorder keys: rejected at ADMISSION", !lr.ok && lr.first_failure.gate === "ADMISSION", lr.first_failure && lr.first_failure.why);
   check("median hook time with ML-DSA-65 under 400 ms", ptimes[4] < 400, `median ${ptimes[4].toFixed(0)} ms`);
+}
+
+// 9. Service mode: recorderd holds the keys and the record; the hook holds only the fingerprint key.
+{
+  const RD = tmp("hive-rd-"), HD = tmp("hive-hook-"), SS = "svc-" + crypto.randomUUID();
+  const pol = path.join(RD, "admission.json");
+  fs.writeFileSync(pol, JSON.stringify({ purpose: "test", tools: ["Read", "Bash", "Edit"], paths: ["**"], hosts: ["registry.npmjs.org"] }));
+  const d = spawn(process.execPath, [path.join(ROOT, "plugins/hive-recorder/scripts/recorderd.mjs")], { env: { ...process.env, HIVE_RECORDER_DIR: RD, HIVE_ADMISSION: pol, HIVE_RECORDERD_PORT: "18790", HIVE_WITNESS_URL: "off", HIVE_TSA_URL: "off" }, stdio: ["ignore", "pipe", "pipe"] });
+  await new Promise(r => d.stdout.once("data", r));
+  const svcEvents = [
+    { hook_event_name: "SessionStart", source: "startup", cwd: "/tmp/p" },
+    { hook_event_name: "PreToolUse", tool_name: "Bash", tool_use_id: "t1", tool_input: { command: "curl -s https://huggingface.co/api/x" }, cwd: "/tmp/p" },
+    { hook_event_name: "PostToolUse", tool_name: "Bash", tool_use_id: "t1", tool_input: { command: "curl -s https://huggingface.co/api/x" }, tool_response: { stdout: "secret content" }, cwd: "/tmp/p" },
+    { hook_event_name: "Stop", last_assistant_message: "done", cwd: "/tmp/p" },
+  ];
+  for (const ev of svcEvents) spawnSync(process.execPath, [REC], { input: JSON.stringify({ ...ev, session_id: SS }), env: { ...process.env, HIVE_RECORDER_DIR: HD, HIVE_RECORDER_URL: "http://127.0.0.1:18790" } });
+  const sf = path.join(RD, "records", SS + ".jsonl");
+  const sr = fs.existsSync(sf) ? verifyFile(sf, { admission: pol }) : { ok: false };
+  check("service mode: the record and signing keys live with recorderd, the agent's side has neither", sr.ok && !fs.existsSync(path.join(HD, "records")) && !fs.existsSync(path.join(HD, "keys", "recorder-ed25519.pem")) && fs.existsSync(path.join(RD, "keys", "recorder-ed25519.pem")));
+  check("service mode: recorderd signs its own admission as line 1 and flags the call outside it", sr.ok && sr.summary.admission && sr.summary.outside_admission.length === 1 && sr.summary.outside_admission[0].outside.hosts[0] === "huggingface.co");
+  check("service mode: no content reaches recorderd", !fs.readFileSync(sf, "utf8").includes("secret content") && !fs.readFileSync(sf, "utf8").includes("huggingface.co/api"));
+  const smug = await fetch("http://127.0.0.1:18790/v1/event", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session_id: SS, desc: { event: "PostToolUse", tool_output: "secret" } }) });
+  check("service mode: recorderd refuses a description carrying any field beyond fingerprints and names", smug.status === 400);
+  d.kill();
 }
 
 // Save the witnessed session as the example record.
