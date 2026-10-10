@@ -13,7 +13,8 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { FORMAT, ZERO, canon } from "./core.mjs";
+import { FORMAT, ZERO, canon, checkScope } from "./core.mjs";
+import { ml_dsa65 } from "./vendor/ml-dsa-65.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DATA = process.env.HIVE_RECORDER_DIR || process.env.CLAUDE_PLUGIN_DATA || path.join(os.homedir(), ".hive-recorder");
@@ -48,7 +49,57 @@ export function loadKeys(dir = DATA) {
   const raw = crypto.createPublicKey(sk).export({ format: "jwk" }).x; // base64url of the 32 byte key
   const keyId = sha256hex(raw).slice(0, 16);
   if (!fs.existsSync(pubPath)) fs.writeFileSync(pubPath, JSON.stringify({ format: FORMAT, alg: "Ed25519", public_key: raw, key_id: keyId, note: "Recorder public key. Give this to whoever will check your records. The private key never leaves this machine." }, null, 2));
-  return { sk, pub: raw, keyId, fk: Buffer.from(fs.readFileSync(fkPath, "utf8").trim(), "hex") };
+  return { sk, pub: raw, keyId, fk: Buffer.from(fs.readFileSync(fkPath, "utf8").trim(), "hex"), kd };
+}
+
+// Optional second signature, ML-DSA-65 (FIPS 204). Turned on with HIVE_PQ=1 when a record starts.
+function loadPq(kd) {
+  const seedPath = path.join(kd, "recorder-ml-dsa-65.seed");
+  if (!fs.existsSync(seedPath)) {
+    const tmp = seedPath + "." + process.pid;
+    fs.writeFileSync(tmp, crypto.randomBytes(32).toString("hex"), { mode: 0o600 });
+    try { fs.linkSync(tmp, seedPath); } catch {}
+    fs.unlinkSync(tmp);
+  }
+  const k = ml_dsa65.keygen(Uint8Array.from(Buffer.from(fs.readFileSync(seedPath, "utf8").trim(), "hex")));
+  return { sk: k.secretKey, pub: b64u(k.publicKey) };
+}
+
+// The admission: what this session is allowed to touch, written by whoever starts the agent
+// (a sandbox orchestrator, a CI job, a person). Read once, when the record starts.
+//   HIVE_ADMISSION=/path/policy.json, or <project>/.claude/hive-admission.json
+//   { "purpose": "...", "tools": ["Read","Bash"], "paths": ["**"], "hosts": ["registry.npmjs.org"], "labels": {...} }
+export function loadAdmission(cwd) {
+  const f = process.env.HIVE_ADMISSION || (cwd ? path.join(cwd, ".claude", "hive-admission.json") : null);
+  if (!f || !fs.existsSync(f)) return null;
+  const p = JSON.parse(fs.readFileSync(f, "utf8"));
+  const list = v => Array.isArray(v) ? v.map(String).sort() : [];
+  return { policy: p, scope: { tools: list(p.tools), paths: list(p.paths), hosts: list(p.hosts).map(h => h.toLowerCase()) } };
+}
+
+// What a tool call touches, as identifiers: file paths and network hosts. Content is never kept.
+const HOST_RES = [
+  /\b(?:https?|wss?|ftps?|sftp|ssh|git):\/\/(?:[^@\/\s'"]+@)?([A-Za-z0-9.-]+)/g,
+  /\bgit@([A-Za-z0-9.-]+):/g,
+  /\b(?:scp|rsync)\b[^\n;&|]*?\s(?:[^@\s:]+@)?([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+):/g,
+  /\b(?:ssh|sftp|nc|ncat|telnet)\s+(?:-[A-Za-z]+(?:\s+(?!-)[^\s@]+(?=\s+\S))?\s+)*(?:[^@\s]+@)?([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/g,
+];
+export function hostsIn(str) {
+  const out = new Set();
+  for (const re of HOST_RES) for (const m of String(str).matchAll(re)) out.add(m[1].toLowerCase().replace(/\.$/, ""));
+  return [...out];
+}
+export function touchedBy(ev) {
+  const i = ev.tool_input && typeof ev.tool_input === "object" ? ev.tool_input : {};
+  const cwd = ev.cwd || process.cwd();
+  const norm = p => { const abs = path.resolve(cwd, String(p)); const rel = path.relative(cwd, abs); return !rel ? "." : (rel.startsWith("..") || path.isAbsolute(rel)) ? abs : rel; };
+  const paths = new Set(), hosts = new Set();
+  for (const k of ["file_path", "notebook_path", "path"]) if (typeof i[k] === "string") paths.add(norm(i[k]));
+  if ((ev.tool_name === "Glob" || ev.tool_name === "Grep") && typeof i.path !== "string") paths.add(".");
+  if (typeof i.command === "string") hostsIn(i.command).forEach(h => hosts.add(h));
+  for (const k of ["url", "uri", "endpoint", "base_url"]) if (typeof i[k] === "string") hostsIn(i[k]).forEach(h => hosts.add(h));
+  for (const k of ["host", "hostname"]) if (typeof i[k] === "string") hosts.add(i[k].toLowerCase());
+  return { paths: [...paths].sort(), hosts: [...hosts].sort() };
 }
 
 function fp(fk, v) { return v === undefined ? undefined : crypto.createHmac("sha256", fk).update(canon(v)).digest("hex"); }
@@ -82,7 +133,7 @@ function lastLine(file) {
 }
 
 // Map one Claude Code hook event to the fields we keep. Raw content never enters the line.
-export function describe(ev, fk) {
+export function describe(ev, fk, scope) {
   const e = ev.hook_event_name;
   const d = { event: e, session: ev.session_id };
   if (ev.prompt_id) d.prompt_id = ev.prompt_id;
@@ -95,7 +146,10 @@ export function describe(ev, fk) {
   }
   const fps = {}, sizes = {};
   const take = (k, v) => { if (v !== undefined) { fps[k] = fp(fk, v); sizes[k] = size(v); } };
-  if (e === "PreToolUse") take("input", ev.tool_input);
+  if (e === "PreToolUse") {
+    take("input", ev.tool_input);
+    if (scope) { const touched = touchedBy(ev); d.scope = { touched, outside: checkScope(scope, ev.tool_name, touched) }; }
+  }
   else if (e === "PostToolUse") { take("input", ev.tool_input); take("response", ev.tool_response); }
   else if (e === "PostToolUseFailure") { take("input", ev.tool_input); take("error", ev.error); if (ev.is_interrupt !== undefined) d.interrupted = !!ev.is_interrupt; }
   else if (e === "UserPromptSubmit") take("prompt", ev.prompt);
@@ -116,19 +170,33 @@ export function append(ev, dir = DATA, now = () => new Date().toISOString()) {
   const keys = loadKeys(dir);
   const rd = path.join(dir, "records"); fs.mkdirSync(rd, { recursive: true });
   const file = path.join(rd, safeId(ev.session_id) + ".jsonl");
+  const metaFile = file.replace(/\.jsonl$/, ".meta.json");
   return withLock(file, () => {
     const out = [];
     let last = lastLine(file);
+    let meta = null, adm = null;
+    if (!last) {
+      try { adm = loadAdmission(ev.cwd); } catch (e) { logError(e); }
+      meta = { pq: process.env.HIVE_PQ === "1", scope: adm ? adm.scope : null };
+      fs.writeFileSync(metaFile, JSON.stringify(meta));
+    } else {
+      try { meta = JSON.parse(fs.readFileSync(metaFile, "utf8")); } catch { meta = { pq: false, scope: null }; }
+    }
+    const pq = meta.pq ? loadPq(keys.kd) : null;
     const write = b => {
       const line = { v: FORMAT, seq: last ? last.seq + 1 : 0, prev: last ? last.hash : ZERO, t: now(), key: keys.keyId, ...b };
       const c = canon(line);
       line.hash = sha256hex(c);
       line.sig = b64u(crypto.sign(null, Buffer.from(c), keys.sk));
+      if (pq) line.sig_pq = b64u(ml_dsa65.sign(Buffer.from(c), pq.sk));
       fs.appendFileSync(file, JSON.stringify(line) + "\n");
       out.push(line); last = line;
     };
-    if (!last) write({ event: "RecorderKey", session: ev.session_id, public_key: keys.pub, key_id: keys.keyId, recorder: "hive-recorder/1.0.0" });
-    write(describe(ev, keys.fk));
+    if (!last) {
+      write({ event: "RecorderKey", session: ev.session_id, public_key: keys.pub, key_id: keys.keyId, recorder: "hive-recorder/1.1.0", ...(pq ? { pq_alg: "ML-DSA-65", pq_public_key: pq.pub } : {}) });
+      if (adm) write({ event: "Admission", session: ev.session_id, scope: adm.scope, labels: adm.policy.labels || undefined, fp_purpose: fp(keys.fk, adm.policy.purpose), policy_sha256: sha256hex(canon(adm.policy)) });
+    }
+    write(describe(ev, keys.fk, meta.scope));
     // Seal at the end of each turn and at session end.
     if (ev.hook_event_name === "Stop" || ev.hook_event_name === "SessionEnd") write({ event: "Seal", session: ev.session_id, count: last.seq + 1, head: last.hash });
     return { file, lines: out, keys };

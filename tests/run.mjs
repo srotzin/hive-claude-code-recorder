@@ -152,6 +152,62 @@ for (const [id, what, gate, make] of cases) {
 fs.writeFileSync(path.join(T, "MANIFEST.json"), JSON.stringify(manifest, null, 2));
 srv.kill();
 
+
+// ---------- admission, scope check and the optional ML-DSA-65 signature ----------
+{
+  const { hostsIn } = await import("../plugins/hive-recorder/scripts/record.mjs");
+  const { ml_dsa65 } = await import("../plugins/hive-recorder/scripts/vendor/ml-dsa-65.mjs");
+  const hs = hostsIn("git clone git@github.com:a/b.git && curl -s https://HuggingFace.co/api/x && ssh -p 22 deploy@prod.acme.io ls");
+  check("hosts read from a Bash command: git, URL and ssh", ["github.com", "huggingface.co", "prod.acme.io"].every(h => hs.includes(h)), hs.join(" "));
+  const proj = tmp("hive-proj-"); fs.mkdirSync(path.join(proj, ".claude"));
+  const policy = { purpose: "Fix the invoice tax bug using only this repository. PURPOSE-TEXT-SHOULD-NOT-APPEAR", tools: ["Read", "Edit", "Bash", "Glob", "Grep", "WebFetch"], paths: ["**"], hosts: ["registry.npmjs.org"], labels: { sandbox: "test-sandbox" } };
+  fs.writeFileSync(path.join(proj, ".claude/hive-admission.json"), JSON.stringify(policy));
+  const AD = tmp("hive-adm-"), AS = "adm-" + crypto.randomUUID();
+  const ac = { session_id: AS, transcript_path: "/x/" + AS + ".jsonl", cwd: proj, permission_mode: "default" };
+  const aev = [
+    { ...ac, hook_event_name: "SessionStart", source: "startup" },
+    { ...ac, hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: path.join(proj, "src/invoice.js") }, tool_use_id: "a1" },
+    { ...ac, hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: path.join(proj, "src/invoice.js") }, tool_response: { ok: 1 }, tool_use_id: "a1" },
+    { ...ac, hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "curl -s https://huggingface.co/api/models?limit=1" }, tool_use_id: "a2" },
+    { ...ac, hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "curl -s https://huggingface.co/api/models?limit=1" }, tool_response: { stdout: "[]" }, tool_use_id: "a2" },
+    { ...ac, hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: "/etc/passwd" }, tool_use_id: "a3" },
+    { ...ac, hook_event_name: "PreToolUse", tool_name: "WebFetch", tool_input: { url: "https://registry.npmjs.org/left-pad", prompt: "version" }, tool_use_id: "a4" },
+    { ...ac, hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: path.join(proj, "notes.md"), content: "x" }, tool_use_id: "a5" },
+    { ...ac, hook_event_name: "Stop", last_assistant_message: "done" },
+  ];
+  const ptimes = [];
+  for (const e of aev) { const t = process.hrtime.bigint(); hook(e, AD, { HIVE_PQ: "1" }); ptimes.push(Number(process.hrtime.bigint() - t) / 1e6); }
+  ptimes.sort((a, b) => a - b);
+  const af = path.join(AD, "records", AS + ".jsonl");
+  const ar = verifyFile(af);
+  check("admission session verifies, ML-DSA-65 and admission gates pass", ar.ok && ar.gates.PQ_SIGNATURE === "PASS" && ar.gates.ADMISSION === "PASS", JSON.stringify(ar.gates));
+  const alines = fs.readFileSync(af, "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l));
+  check("the admission is line 1, signed before any tool call", alines[1].event === "Admission" && alines[1].scope.hosts[0] === "registry.npmjs.org");
+  const out = ar.summary.outside_admission;
+  check("outside admission: the huggingface.co call, /etc/passwd and the Write tool, nothing else", out.length === 3 && out[0].outside.hosts[0] === "huggingface.co" && out[0].ran && out[1].outside.paths[0] === "/etc/passwd" && !out[1].ran && out[2].outside.tool, JSON.stringify(out.map(o => o.outside)));
+  check("purpose text never enters the record", !fs.readFileSync(af, "utf8").includes("PURPOSE-TEXT"));
+  const cli = spawnSync(process.execPath, [path.join(ROOT, "plugins/hive-recorder/scripts/verify.mjs"), af], { encoding: "utf8" });
+  check("verifier exits 3 when the record holds but calls fell outside the admission", cli.status === 3 && cli.stdout.includes("OUTSIDE ADMISSION"), "exit " + cli.status);
+  const pf = path.join(AD, "policy.json"); fs.writeFileSync(pf, JSON.stringify(policy));
+  check("--admission with the policy the reviewer was given passes", verifyFile(af, { admission: pf }).ok);
+  fs.writeFileSync(pf, JSON.stringify({ ...policy, hosts: ["registry.npmjs.org", "huggingface.co"] }));
+  const aw = verifyFile(af, { admission: pf });
+  check("--admission with a different policy is rejected at ADMISSION", !aw.ok && aw.first_failure.gate === "ADMISSION");
+  const stripped = alines.map((l, i) => i === 4 ? (({ sig_pq, ...r }) => r)(l) : l);
+  const sf = path.join(AD, "stripped.jsonl"); fs.writeFileSync(sf, stripped.map(l => JSON.stringify(l)).join("\n") + "\n");
+  const sr = verifyFile(sf, { witness: sf + ".none" });
+  check("ML-DSA-65 signature removed from one line: rejected at PQ_SIGNATURE", !sr.ok && sr.first_failure.gate === "PQ_SIGNATURE", sr.first_failure && sr.first_failure.why);
+  // The recorder's own keys re-sign a line that claims the huggingface.co call was inside scope.
+  const ask = crypto.createPrivateKey(fs.readFileSync(path.join(AD, "keys/recorder-ed25519.pem")));
+  const apq = ml_dsa65.keygen(Uint8Array.from(Buffer.from(fs.readFileSync(path.join(AD, "keys/recorder-ml-dsa-65.seed"), "utf8").trim(), "hex")));
+  let prev = "0".repeat(64);
+  const lie = alines.map((l0, i) => { const l = { ...body(l0), seq: i, prev }; if (l.tool && l.tool.use_id === "a2" && l.scope) l.scope = { ...l.scope, outside: { tool: false, paths: [], hosts: [] } }; if (l.event === "Seal") { l.count = i; l.head = prev; } const c = canon(l); const h = crypto.createHash("sha256").update(c).digest("hex"); prev = h; return { ...l, hash: h, sig: crypto.sign(null, Buffer.from(c), ask).toString("base64url"), sig_pq: Buffer.from(ml_dsa65.sign(Buffer.from(c), apq.secretKey)).toString("base64url") }; });
+  const lf = path.join(AD, "lie.jsonl"); fs.writeFileSync(lf, lie.map(l => JSON.stringify(l)).join("\n") + "\n");
+  const lr = verifyFile(lf, { witness: lf + ".none" });
+  check("scope check rewritten and fully re-signed with both recorder keys: rejected at ADMISSION", !lr.ok && lr.first_failure.gate === "ADMISSION", lr.first_failure && lr.first_failure.why);
+  check("median hook time with ML-DSA-65 under 400 ms", ptimes[4] < 400, `median ${ptimes[4].toFixed(0)} ms`);
+}
+
 // Save the witnessed session as the example record.
 const E = path.join(ROOT, "examples");
 fs.copyFileSync(path.join(W, "records", WS + ".jsonl"), path.join(E, "session.jsonl"));

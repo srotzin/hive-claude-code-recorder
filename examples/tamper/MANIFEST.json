@@ -60,7 +60,7 @@
     "what": "Whole record rebuilt and re-signed with the recorder's own key, refund removed",
     "expected": "WITNESS",
     "got": "WITNESS",
-    "why": "the witness saw 11 lines ending in 0d172069605c, and this record no longer has that"
+    "why": "the witness saw 11 lines ending in a7223abf8788, and this record no longer has that"
   },
   {
     "id": "rewritten-other-key",

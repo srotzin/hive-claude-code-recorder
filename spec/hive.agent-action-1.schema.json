@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://thehiveryiq.com/claude-code/spec/hive.agent-action-1.schema.json",
-  "title": "hive.agent-action/1 line",
+  "title": "hive.agent-action/1 line (spec 1.1)",
   "type": "object",
   "required": [
     "v",
@@ -91,7 +91,8 @@
           "error",
           "prompt",
           "last_message",
-          "event_fields"
+          "event_fields",
+          "purpose"
         ]
       }
     },
@@ -145,6 +146,126 @@
     "head": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "sig_pq": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "pq_alg": {
+      "const": "ML-DSA-65"
+    },
+    "pq_public_key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{2603}$"
+    },
+    "scope": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "tools",
+            "paths",
+            "hosts"
+          ],
+          "properties": {
+            "tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "touched",
+            "outside"
+          ],
+          "properties": {
+            "touched": {
+              "type": "object",
+              "required": [
+                "paths",
+                "hosts"
+              ],
+              "properties": {
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "hosts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "outside": {
+              "type": "object",
+              "required": [
+                "tool",
+                "paths",
+                "hosts"
+              ],
+              "properties": {
+                "tool": {
+                  "type": "boolean"
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "hosts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean"
+        ]
+      }
+    },
+    "fp_purpose": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "policy_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
     }
   },
   "additionalProperties": false,
@@ -176,6 +297,21 @@
         "required": [
           "count",
           "head"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "Admission"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "scope",
+          "policy_sha256"
         ]
       }
     }

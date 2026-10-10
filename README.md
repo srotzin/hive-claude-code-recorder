@@ -33,7 +33,29 @@ node verify.mjs reveal session.jsonl --seq 7 --field input --value value.json --
 node plugins/hive-recorder/scripts/verify.mjs <session.jsonl> --key key.json --witness-key <witness key>
 ```
 
-It runs seven gates (format, key pin, chain order, entry hash, signature, seal, witness), prints the first failure if there is one, and summarises the session: prompts, turns, tool calls asked, completed, failed, and asked with no outcome. A call with no outcome is one that was asked for and never ran, such as a permission denial.
+It runs nine gates (format, key pin, chain order, entry hash, signature, ML-DSA-65 signature, seal, admission, witness), prints the first failure if there is one, and summarises the session: prompts, turns, tool calls asked, completed, failed, and asked with no outcome. A call with no outcome is one that was asked for and never ran, such as a permission denial.
+
+## Admission: what the session was allowed to touch
+
+Whoever starts the agent can write down, before it starts, what it may touch. Put this in `.claude/hive-admission.json` in the project, or point `HIVE_ADMISSION` at it:
+
+```
+{ "purpose": "Fix the invoice tax bug using only this repository.",
+  "tools": ["Read", "Edit", "Bash", "Glob", "Grep"],
+  "paths": ["**"],
+  "hosts": ["registry.npmjs.org"],
+  "labels": { "sandbox": "eval-7f3a" } }
+```
+
+The recorder signs it as line 1, before the first tool call. Every tool call after that records the paths and hosts it touches, and which of them fell outside the admission. The checker re-runs that check itself from the signed admission, so a record that hides an out-of-scope call is rejected, even when it is re-signed with the recorder's own key.
+
+It reports. It never blocks. With an admission, touched paths and hostnames are kept in plaintext so anyone can re-run the check. Prompts, inputs and outputs stay fingerprints. Give a reviewer the policy file and they can pin it with `--admission policy.json`.
+
+The checker exits 0 when the record holds and everything stayed inside the admission, 3 when the record holds and something reached outside, and 1 when the record was changed.
+
+## Optional ML-DSA-65 signature
+
+Set `HIVE_PQ=1` and every line is also signed with ML-DSA-65 (FIPS 204), using a bundled copy of [@noble/post-quantum](https://github.com/paulmillr/noble-post-quantum) (MIT). The checker verifies both signatures. It adds about 60 ms per hook. The witness still signs with Ed25519.
 
 ## The witness
 
@@ -53,9 +75,11 @@ The default witness is Hive's, at `https://witness.thehiveryiq.com/v1/witness`. 
 node tests/run.mjs
 ```
 
-The suite runs the real hook script once per event, the way Claude Code does, using the payload shapes from Claude Code's hooks reference. It checks exit codes and output, privacy, reveal, fail-open behaviour, 40 parallel hooks, latency, the witness round trip and 10 tamper cases. Results are in `tests/RESULTS.txt`.
+The suite runs the real hook script once per event, the way Claude Code does, using the payload shapes from Claude Code's hooks reference. It checks exit codes and output, privacy, reveal, fail-open behaviour, 40 parallel hooks, latency, the witness round trip, 10 tamper cases, the admission and scope check, and the ML-DSA-65 signature. Results are in `tests/RESULTS.txt`.
 
 `examples/claude-code-session/` is a record from a real Claude Code session, witnessed by Hive's live witness. Claude Code denied one call in that session, and the record shows it as asked for with no outcome. Its 12 tamper cases are all rejected (`node tests/real-tamper.mjs`).
+
+`examples/claude-code-admission/` is a second real session with an admission and ML-DSA-65 signatures. Claude reached a host the admission did not allow, and the record shows it.
 
 ## Open format
 
@@ -63,6 +87,6 @@ The record format is `hive.agent-action/1`. The spec is in `spec/SPEC.md` and th
 
 ## Limits
 
-A record proves what the runtime reported, in what order, and that it didn't change afterwards. It does not prove an action was right or authorized, and it can't include events the runtime never reported. Lines after the last witnessed seal are protected by your key alone. Signatures are Ed25519.
+A record proves what the runtime reported, in what order, and that it didn't change afterwards. It does not prove an action was right or authorized, and it can't include events the runtime never reported. Lines after the last witnessed seal are protected by your key alone. The scope check only sees what a tool's input names: a host reached by a program the agent starts is not seen. Every line is signed with Ed25519; ML-DSA-65 is optional.
 
 MIT licensed. Hive, https://thehiveryiq.com

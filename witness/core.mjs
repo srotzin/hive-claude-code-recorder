@@ -14,17 +14,51 @@ export function canon(v) {
 }
 
 // The part of a line that is hashed and signed: everything except hash and sig.
+// sig_pq (the optional ML-DSA-65 signature) is over the same body.
 export function body(line) {
-  const { hash, sig, ...rest } = line;
+  const { hash, sig, sig_pq, ...rest } = line;
   return rest;
 }
 
-export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATURE", "SEAL", "WITNESS"];
+// Glob match. "**" matches anything, "*" matches anything except sep, "?" one character.
+export function globMatch(pattern, s, sep = "/") {
+  const e = c => c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const ns = "[^" + e(sep) + "]";
+  let re = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (ch === "*" && pattern[i + 1] === "*") { re += ".*"; i++; if (pattern[i + 1] === sep) { re = re.slice(0, -2) + "(?:.*" + e(sep) + ")?"; i++; } }
+    else if (ch === "*") re += ns + "*";
+    else if (ch === "?") re += ns;
+    else re += e(ch);
+  }
+  return new RegExp("^" + re + "$").test(s);
+}
+
+// Scope check against a signed admission. Pure, so the verifier can re-run it.
+//   scope:   { tools: [globs], paths: [globs], hosts: [globs] }
+//   tool:    tool name
+//   touched: { paths: [...], hosts: [...] }
+export function checkScope(scope, tool, touched) {
+  const any = (list, v, sep) => (list || []).some(p => globMatch(p, v, sep));
+  return {
+    tool: !any(scope.tools, tool, "\u0000"),
+    // Paths inside the project are recorded relative to it. An absolute path (outside the
+    // project) can only match an admitted pattern that is itself absolute.
+    paths: (touched.paths || []).filter(p => !(scope.paths || []).some(g => (p[0] === "/") === (g[0] === "/") && globMatch(g, p, "/"))),
+    hosts: (touched.hosts || []).filter(h => !any(scope.hosts, h, ".")),
+  };
+}
+export function isOutside(o) { return !!(o && (o.tool || (o.paths && o.paths.length) || (o.hosts && o.hosts.length))); }
+
+export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATURE", "PQ_SIGNATURE", "SEAL", "ADMISSION", "WITNESS"];
 
 // Verify one session record.
 //   lines:    array of parsed JSON lines
-//   c:        { sha256hex(str) -> hex, verify(pubB64url, msgStr, sigB64url) -> bool }
-//   opts:     { pin: public key (b64url) expected, witnesses: [statements], witnessPin: b64url }
+//   c:        { sha256hex(str) -> hex, verify(pubB64url, msgStr, sigB64url) -> bool,
+//               verifyPq?(pubB64url, msgStr, sigB64url) -> bool  (ML-DSA-65, optional) }
+//   opts:     { pin: public key (b64url) expected, witnesses: [statements], witnessPin: b64url,
+//               admissionPin: sha256 of the canonical admission policy the reviewer expects }
 export function verifyRecord(lines, c, opts = {}) {
   const res = { ok: false, gates: {}, first_failure: null, entries: lines.length, summary: null };
   const fail = (g, why) => { if (!res.first_failure) res.first_failure = { gate: g, why }; res.gates[g] = "FAIL"; };
@@ -57,6 +91,17 @@ export function verifyRecord(lines, c, opts = {}) {
   }
   pass("CHAIN_ORDER"); pass("ENTRY_HASH"); pass("SIGNATURE");
 
+  // PQ_SIGNATURE: if the recorder key line names an ML-DSA-65 key, every line must carry a valid sig_pq.
+  if (start.pq_public_key) {
+    if (typeof c.verifyPq !== "function") res.gates.PQ_SIGNATURE = "NOT_CHECKED";
+    else {
+      for (const [i, l] of lines.entries()) {
+        if (typeof l.sig_pq !== "string" || !c.verifyPq(start.pq_public_key, canon(body(l)), l.sig_pq)) { fail("PQ_SIGNATURE", "line " + i + " ML-DSA-65 signature is missing or does not verify"); break; }
+      }
+      pass("PQ_SIGNATURE");
+    }
+  } else res.gates.PQ_SIGNATURE = "NONE";
+
   // SEAL: every Seal line must cover exactly the lines before it.
   const seals = lines.filter(l => l.event === "Seal");
   for (const s of seals) {
@@ -67,6 +112,24 @@ export function verifyRecord(lines, c, opts = {}) {
   const last = lines[lines.length - 1];
   res.sealed = last.event === "Seal";
   res.open_tail = res.sealed ? 0 : lines.length - 1 - (seals.length ? seals[seals.length - 1].seq : 0);
+
+  // ADMISSION: the signed scope must come before anything happened, and every recorded
+  // scope check must be what the admission says. The verifier re-runs the check itself.
+  const adm = lines.filter(l => l.event === "Admission");
+  if (adm.length) {
+    const a = adm[0];
+    if (adm.length > 1 || a.seq !== 1) fail("ADMISSION", "the admission must be line 1, before anything happened, and appear once");
+    else if (opts.admissionPin && a.policy_sha256 !== opts.admissionPin) fail("ADMISSION", "the admission in this record is not the policy you expected");
+    else {
+      for (const l of lines) {
+        if (l.event !== "PreToolUse") continue;
+        if (!l.scope || !l.scope.touched) { fail("ADMISSION", "line " + l.seq + " has no scope check"); break; }
+        const want = checkScope(a.scope, l.tool.name, l.scope.touched);
+        if (canon(want) !== canon(l.scope.outside)) { fail("ADMISSION", "line " + l.seq + " scope check does not match the admission"); break; }
+      }
+    }
+    pass("ADMISSION");
+  } else res.gates.ADMISSION = "NONE";
 
   // WITNESS: each statement must sign a head that is in this chain at that count.
   const ws = opts.witnesses || [];
@@ -106,6 +169,9 @@ export function summarize(lines) {
   }
   const noOutcome = [...pre.keys()].filter(id => !post.has(id) && !failed.has(id)).map(id => ({ seq: pre.get(id).seq, tool: pre.get(id).tool.name }));
   const s = lines[0] && lines.find(l => l.event === "SessionStart");
+  const a = lines.find(l => l.event === "Admission");
+  const outside = lines.filter(l => l.event === "PreToolUse" && l.scope && isOutside(l.scope.outside))
+    .map(l => ({ seq: l.seq, tool: l.tool.name, use_id: l.tool.use_id, ran: post.has(l.tool.use_id), outside: l.scope.outside }));
   return {
     session: lines[0] && lines[0].session,
     model: s && s.model || null,
@@ -117,5 +183,7 @@ export function summarize(lines) {
     tool_calls_failed: failed.size,
     asked_without_outcome: noOutcome,
     tools_completed: tools,
+    admission: a ? { scope: a.scope, labels: a.labels || null, policy_sha256: a.policy_sha256 } : null,
+    outside_admission: outside,
   };
 }
