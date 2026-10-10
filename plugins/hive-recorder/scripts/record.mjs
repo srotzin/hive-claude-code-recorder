@@ -13,7 +13,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { FORMAT, ZERO, canon, checkScope } from "./core.mjs";
+import { FORMAT, ZERO, canon, checkScope, scopeOf } from "./core.mjs";
 import { ml_dsa65 } from "./vendor/ml-dsa-65.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -73,8 +73,7 @@ export function loadAdmission(cwd) {
   const f = process.env.HIVE_ADMISSION || (cwd ? path.join(cwd, ".claude", "hive-admission.json") : null);
   if (!f || !fs.existsSync(f)) return null;
   const p = JSON.parse(fs.readFileSync(f, "utf8"));
-  const list = v => Array.isArray(v) ? v.map(String).sort() : [];
-  return { policy: p, scope: { tools: list(p.tools), paths: list(p.paths), hosts: list(p.hosts).map(h => h.toLowerCase()) } };
+  return { policy: p, scope: scopeOf(p) };
 }
 
 // What a tool call touches, as identifiers: file paths and network hosts. Content is never kept.

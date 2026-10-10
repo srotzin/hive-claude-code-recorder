@@ -10,8 +10,8 @@ ok   reveal: the real refund command matches its fingerprint  MATCH  line 7 inpu
 ok   reveal: a different amount does not match
 ok   unwritable storage: still exits 0, prints nothing  exit 0
 ok   malformed input: still exits 0, prints nothing
-ok   40 parallel hooks: all exit 0, one valid chain of 41 lines  41 lines in 1902 ms
-ok   median hook time under 250 ms  median 82 ms, p90 103 ms
+ok   40 parallel hooks: all exit 0, one valid chain of 41 lines  41 lines in 1896 ms
+ok   median hook time under 250 ms  median 84 ms, p90 103 ms
 ok   witness: statement saved, verifies against the pinned witness key  {"FORMAT":"PASS","KEY_PIN":"PASS","CHAIN_ORDER":"PASS","ENTRY_HASH":"PASS","SIGNATURE":"PASS","PQ_SIGNATURE":"NONE","SEAL":"PASS","ADMISSION":"NONE","WITNESS":"PASS"}
 ok   witness refuses any field beyond the four fingerprints
 ok   tamper refund-call-deleted: rejected at CHAIN_ORDER  CHAIN_ORDER, expected seq 7, found 8
@@ -22,7 +22,7 @@ ok   tamper lines-swapped: rejected at CHAIN_ORDER  CHAIN_ORDER, expected seq 3,
 ok   tamper fingerprint-swapped: rejected at ENTRY_HASH  ENTRY_HASH, line 7 changed after it was signed
 ok   tamper signature-forged: rejected at SIGNATURE  SIGNATURE, line 2 signature does not verify
 ok   tamper seal-moved: rejected at ENTRY_HASH  ENTRY_HASH, line 11 changed after it was signed
-ok   tamper rewritten-dropped-refund: rejected at WITNESS  WITNESS, the witness saw 11 lines ending in a7223abf8788, and this record no longer has that
+ok   tamper rewritten-dropped-refund: rejected at WITNESS  WITNESS, the witness saw 11 lines ending in 7b5739eb53fd, and this record no longer has that
 ok   tamper rewritten-other-key: rejected at KEY_PIN  KEY_PIN, record was signed by a key other than the pinned one
 ok   hosts read from a Bash command: git, URL and ssh  huggingface.co github.com prod.acme.io
 ok   admission session verifies, ML-DSA-65 and admission gates pass  {"FORMAT":"PASS","KEY_PIN":"PASS","CHAIN_ORDER":"PASS","ENTRY_HASH":"PASS","SIGNATURE":"PASS","PQ_SIGNATURE":"PASS","SEAL":"PASS","ADMISSION":"PASS","WITNESS":"NONE"}
@@ -34,7 +34,7 @@ ok   --admission with the policy the reviewer was given passes
 ok   --admission with a different policy is rejected at ADMISSION
 ok   ML-DSA-65 signature removed from one line: rejected at PQ_SIGNATURE  line 4 ML-DSA-65 signature is missing or does not verify
 ok   scope check rewritten and fully re-signed with both recorder keys: rejected at ADMISSION  line 5 scope check does not match the admission
-ok   median hook time with ML-DSA-65 under 400 ms  median 126 ms
+ok   median hook time with ML-DSA-65 under 400 ms  median 136 ms
 
 37 of 37 checks passed. 10 of 10 tamper cases rejected.
-Node v20.20.1, linux x64, 2026-10-10T16:03:28.893Z
+Node v20.20.1, linux x64, 2026-10-10T16:07:05.350Z

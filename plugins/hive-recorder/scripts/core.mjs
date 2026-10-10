@@ -49,6 +49,11 @@ export function checkScope(scope, tool, touched) {
     hosts: (touched.hosts || []).filter(h => !any(scope.hosts, h, ".")),
   };
 }
+// The scope an admission policy gives. The recorder and the checker both use this.
+export function scopeOf(p) {
+  const list = v => Array.isArray(v) ? v.map(String).sort() : [];
+  return { tools: list(p.tools), paths: list(p.paths), hosts: list(p.hosts).map(h => h.toLowerCase()) };
+}
 export function isOutside(o) { return !!(o && (o.tool || (o.paths && o.paths.length) || (o.hosts && o.hosts.length))); }
 
 export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATURE", "PQ_SIGNATURE", "SEAL", "ADMISSION", "WITNESS"];
@@ -58,7 +63,8 @@ export const GATES = ["FORMAT", "KEY_PIN", "CHAIN_ORDER", "ENTRY_HASH", "SIGNATU
 //   c:        { sha256hex(str) -> hex, verify(pubB64url, msgStr, sigB64url) -> bool,
 //               verifyPq?(pubB64url, msgStr, sigB64url) -> bool  (ML-DSA-65, optional) }
 //   opts:     { pin: public key (b64url) expected, witnesses: [statements], witnessPin: b64url,
-//               admissionPin: sha256 of the canonical admission policy the reviewer expects }
+//               admissionPin: sha256 of the canonical admission policy the reviewer expects,
+//               admissionScope: the scope that policy gives, from scopeOf(policy) }
 export function verifyRecord(lines, c, opts = {}) {
   const res = { ok: false, gates: {}, first_failure: null, entries: lines.length, summary: null };
   const fail = (g, why) => { if (!res.first_failure) res.first_failure = { gate: g, why }; res.gates[g] = "FAIL"; };
@@ -120,6 +126,7 @@ export function verifyRecord(lines, c, opts = {}) {
     const a = adm[0];
     if (adm.length > 1 || a.seq !== 1) fail("ADMISSION", "the admission must be line 1, before anything happened, and appear once");
     else if (opts.admissionPin && a.policy_sha256 !== opts.admissionPin) fail("ADMISSION", "the admission in this record is not the policy you expected");
+    else if (opts.admissionScope && canon(a.scope) !== canon(opts.admissionScope)) fail("ADMISSION", "the admission's scope is not the scope in the policy you expected");
     else {
       for (const l of lines) {
         if (l.event !== "PreToolUse") continue;
@@ -171,7 +178,7 @@ export function summarize(lines) {
   const s = lines[0] && lines.find(l => l.event === "SessionStart");
   const a = lines.find(l => l.event === "Admission");
   const outside = lines.filter(l => l.event === "PreToolUse" && l.scope && isOutside(l.scope.outside))
-    .map(l => ({ seq: l.seq, tool: l.tool.name, use_id: l.tool.use_id, ran: post.has(l.tool.use_id), outside: l.scope.outside }));
+    .map(l => ({ seq: l.seq, tool: l.tool.name, use_id: l.tool.use_id, ran: post.has(l.tool.use_id) || failed.has(l.tool.use_id), failed: failed.has(l.tool.use_id), outside: l.scope.outside }));
   return {
     session: lines[0] && lines[0].session,
     model: s && s.model || null,

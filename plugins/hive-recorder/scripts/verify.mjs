@@ -9,7 +9,7 @@
 //           1: a gate failed. The record was changed, or is not what you were told it is.
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { verifyRecord, canon, GATES } from "./core.mjs";
+import { verifyRecord, canon, GATES, scopeOf } from "./core.mjs";
 import { ml_dsa65 } from "./vendor/ml-dsa-65.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,8 +34,8 @@ export function verifyFile(file, { key, witness, witnessKey, admission } = {}) {
   const lines = readLines(file);
   const wf = witness || file.replace(/\.jsonl$/, ".witness.jsonl");
   const witnesses = fs.existsSync(wf) && wf !== file ? readLines(wf) : [];
-  const admissionPin = admission ? c.sha256hex(canon(JSON.parse(fs.readFileSync(admission, "utf8")))) : undefined;
-  return verifyRecord(lines, c, { pin: keyArg(key), witnesses, witnessPin: keyArg(witnessKey), admissionPin });
+  const pol = admission ? JSON.parse(fs.readFileSync(admission, "utf8")) : null;
+  return verifyRecord(lines, c, { pin: keyArg(key), witnesses, witnessPin: keyArg(witnessKey), admissionPin: pol ? c.sha256hex(canon(pol)) : undefined, admissionScope: pol ? scopeOf(pol) : undefined });
 }
 
 function reveal(args) {
@@ -76,7 +76,7 @@ function main() {
         if (!s.outside_admission.length) console.log("  every tool call stayed inside the admission");
         for (const o of s.outside_admission) {
           const what = [o.outside.tool ? "tool " + o.tool : "", o.outside.hosts.length ? "hosts " + o.outside.hosts.join(", ") : "", o.outside.paths.length ? "paths " + o.outside.paths.join(", ") : ""].filter(Boolean).join("; ");
-          console.log(`  OUTSIDE ADMISSION  line ${o.seq} ${o.tool}: ${what}. ${o.ran ? "It ran." : "It did not run."}`);
+          console.log(`  OUTSIDE ADMISSION  line ${o.seq} ${o.tool}: ${what}. ${o.failed ? "It ran and failed." : o.ran ? "It ran." : "It did not run."}`);
         }
       }
     }

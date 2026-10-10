@@ -162,7 +162,7 @@ A checker runs these in order and reports the first failure.
 | `SIGNATURE` | Each `sig` verifies under the record's public key. |
 | `PQ_SIGNATURE` | When `RecorderKey` names a `pq_public_key`, every line has a `sig_pq` that verifies under it. `NONE` otherwise. |
 | `SEAL` | Each `Seal` has `count` equal to its `seq` and `head` equal to the previous line's `hash`. |
-| `ADMISSION` | When there is an `Admission` line, it is line 1 and appears once, it matches the policy the checker was given (if any), every `PreToolUse` carries a scope check, and every recorded `outside` equals the checker's own result. `NONE` when there is no admission. |
+| `ADMISSION` | When there is an `Admission` line, it is line 1 and appears once, its `policy_sha256` and `scope` match the policy the checker was given (if any), every `PreToolUse` carries a scope check, and every recorded `outside` equals the checker's own result. `NONE` when there is no admission. |
 | `WITNESS` | Each witness statement verifies under the pinned witness key, names this recorder key, and its `head` is the hash of line `count - 1` of this record. `NONE` when there are no statements. |
 
 The reference checker exits 0 when every gate passes and nothing fell outside the admission, 3 when every gate passes and one or more calls fell outside it, and 1 when a gate fails.
