@@ -39,7 +39,7 @@ const cases = [
   ["statements-withheld", "The same rewrite, handed over without any witness statements.", "WITNESS", async () => ({ lines: noEsc, wit: [], tsa: [] })],
   ["fresh-statements-later", "The same rewrite, with brand new witness statements requested from the witness afterwards.", "WITNESS", async () => ({ lines: noEsc, wit: await freshStatements(noEsc), tsa: [] })],
   ["timestamps-withheld", "The record and witness statements untouched, the public timestamps left out.", "TIMESTAMP", async () => ({ lines: base, wit, tsa: [] })],
-  ["timestamp-moved", "A DigiCert token is relabelled to cover a different line.", "TIMESTAMP", async () => ({ lines: base, wit, tsa: tsa.map((t, i) => i === 0 ? { ...t, count: t.count + 1, head: base[t.count].hash } : t) })],
+  ["timestamp-moved", "A DigiCert timestamp is relabelled to cover a different line.", "TIMESTAMP", async () => ({ lines: base, wit, tsa: tsa.map((t, i) => i === 0 ? { ...t, count: t.count + 1, head: base[t.count].hash } : t) })],
   ["tail-dropped", "The last seal and session end are cut off, so the end of the session is not shown.", "SEAL", async () => ({ lines: base.slice(0, base.length - 2), wit: wit.filter(w => w.count <= base.length - 2), tsa: tsa.filter(t => t.count <= base.length - 2) })],
 ];
 fs.mkdirSync(out, { recursive: true });

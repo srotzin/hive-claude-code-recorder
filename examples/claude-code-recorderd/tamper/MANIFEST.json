@@ -34,7 +34,7 @@
   {
     "id": "timestamp-moved",
     "file": "timestamp-moved.jsonl",
-    "what": "A DigiCert token is relabelled to cover a different line.",
+    "what": "A DigiCert timestamp is relabelled to cover a different line.",
     "expected": "TIMESTAMP",
     "got": "TIMESTAMP",
     "why": "the timestamp token for line 3 does not verify: 40570413C27F0000:error:17800067:time stamp routines:ts_check_imprints:message imprint mismatch:../crypto/ts/ts_rsp_verify.c:508:"
