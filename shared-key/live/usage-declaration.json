@@ -1,0 +1,134 @@
+{
+ "kind": "hive.usage-inventory/1",
+ "vendor": "market-data",
+ "customer": "firm-demo-4",
+ "period": {
+  "from": "2026-10-11T01:23:25.000Z",
+  "to": "2026-10-11T01:24:49.000Z"
+ },
+ "vendor_key": "fzRLBYluTLJaa2DW8T11AaBbIH2OUE8hk8akjX9BNgI",
+ "recorder_key": "IyC-i5liFGbjfJm1zMESe73_tt1vk4BNotjZA94umDY",
+ "vendor_log": {
+  "log_fp": "4e91575d1f95fc94e07aa0037106de47b4a60932b46c0662ab7ac5e1c4d67ab9",
+  "count": 4,
+  "head": "f42b63d9dd5d460788de4a0629075cd7fa2dd3b45478f8742db3a520015e4141"
+ },
+ "sessions": [
+  {
+   "session_fp": "0bed4356fc7054b72435a566b296ce29074ee4730a5323bcf1c58952d59534c9",
+   "count": 16,
+   "head": "2f0520ffb4fda242e5a1981ebc482d563ee8f81ec595d697bd8a6b9d454ed8b3"
+  },
+  {
+   "session_fp": "9d7292c97a462dc7c8f6b70ba0fbee975cd4402996b6202c0f0bd2d108a3191f",
+   "count": 14,
+   "head": "a3aa1b0de7a2d5719916e2f98885bf26d4a8383f67edeba5d19b5d07da0a0a1b"
+  }
+ ],
+ "deliveries": [
+  {
+   "seq": 0,
+   "t": "2026-10-11T01:23:41.272Z",
+   "tool": "get_eod",
+   "datasets": [
+    "futures.brent.eod"
+   ],
+   "delivery_fp": "d48572b1f602684d99a01f9e285a7557e6e8d1cf95e3f8a605ba8997d787a2c5",
+   "status": "matched"
+  },
+  {
+   "seq": 1,
+   "t": "2026-10-11T01:23:42.029Z",
+   "tool": "get_eod",
+   "datasets": [
+    "futures.wti.eod"
+   ],
+   "delivery_fp": "0eb2c12f45da93d821c5a3b4b2c61ac87ca8f6ce2d49184ee24efceee255fa54",
+   "status": "matched"
+  },
+  {
+   "seq": 2,
+   "t": "2026-10-11T01:24:09.728Z",
+   "tool": "get_records",
+   "datasets": [
+    "mortgage.loan-level"
+   ],
+   "delivery_fp": "60aadcafdd035887c340e2076f7c109c592c5c0426b78f7091d07c50c4bb0d5a",
+   "status": "matched"
+  },
+  {
+   "seq": 3,
+   "t": "2026-10-11T01:24:23.216Z",
+   "tool": "get_eod",
+   "datasets": [
+    "futures.brent.eod"
+   ],
+   "delivery_fp": "09c9fd25073eed87a238efa8de0d24d0423b3b9e4d013f9691e420dc6af9e8b2",
+   "status": "delivered, no record"
+  }
+ ],
+ "totals": {
+  "deliveries": 4,
+  "matched": 3,
+  "delivered_no_record": 1,
+  "recorded_no_delivery": 0
+ },
+ "match_sha256": "c9470236b32cc556efde6879e7a98d2d396ccd5e3b2705f8a146b5ea0ce68565",
+ "firm_accepted_at": "2026-10-11T01:28:37.807Z",
+ "declaration": {
+  "categories_sha256": "0cd673623f677aa60b6575cb1471c49833f8555846c9e03216853b893ad5d693",
+  "fee_schedule_ref": "The vendor's own fee schedule. Category names only; no rates are held here.",
+  "lines": [
+   {
+    "category": "End-of-day futures settlement data",
+    "use": "agent_use",
+    "use_label": "Agent use, recorded on both sides",
+    "datasets": [
+     "futures.brent.eod",
+     "futures.wti.eod"
+    ],
+    "deliveries": 2,
+    "delivery_seqs": [
+     0,
+     1
+    ],
+    "rate": "per the vendor's fee schedule",
+    "amount": null
+   },
+   {
+    "category": "End-of-day futures settlement data",
+    "use": "outside_agent_record",
+    "use_label": "Delivered, with no agent record on the firm's side",
+    "datasets": [
+     "futures.brent.eod"
+    ],
+    "deliveries": 1,
+    "delivery_seqs": [
+     3
+    ],
+    "rate": "per the vendor's fee schedule",
+    "amount": null
+   },
+   {
+    "category": "Loan-level mortgage data",
+    "use": "agent_use",
+    "use_label": "Agent use, recorded on both sides",
+    "datasets": [
+     "mortgage.loan-level"
+    ],
+    "deliveries": 1,
+    "delivery_seqs": [
+     2
+    ],
+    "rate": "per the vendor's fee schedule",
+    "amount": null
+   }
+  ],
+  "totals": {
+   "agent_use": 3,
+   "outside_agent_record": 1,
+   "outside_match": 0,
+   "unclassified": 0
+  }
+ }
+}

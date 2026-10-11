@@ -23,6 +23,29 @@ const jl = f => fs.readFileSync(f, "utf8").split("\n").filter(Boolean).map(JSON.
 const refuse = why => { throw Object.assign(new Error("refused: " + why), { refused: true }); };
 
 // The inventory is a pure function of the signed match and the vendor log, so all three compute the same bytes.
+// The usage declaration: the same deliveries, grouped into the vendor's own fee categories. Both sides hold the same
+// category map (names only; rates stay in the vendor's fee schedule), so the declaration is as deterministic as the inventory.
+// A delivery that reached the customer with no agent record gets its own line, so a pull made around the agent is declared,
+// not lost. Hive never sets a rate, an amount or a category: the map is the vendor's, agreed by the firm.
+const USE = { "matched": ["agent_use", "Agent use, recorded on both sides"], "delivered, no record": ["outside_agent_record", "Delivered, with no agent record on the firm's side"],
+  "outside the match": ["outside_match", "Delivered in the period, outside the signed match"] };
+export function declarationOf(inv, cats) {
+  if (!cats || cats.kind !== "hive.fee-categories/1" || cats.vendor !== inv.vendor) refuse("this party holds no fee category map for " + inv.vendor);
+  const groups = new Map();
+  for (const d of inv.deliveries) for (const ds of d.datasets) {
+    const category = cats.datasets[ds] || "Unclassified: not in the category map";
+    const [use, use_label] = USE[d.status] || ["unknown", d.status];
+    const k = category + "\n" + use;
+    if (!groups.has(k)) groups.set(k, { category, use, use_label, datasets: [], deliveries: 0, delivery_seqs: [], rate: "per the vendor's fee schedule", amount: null });
+    const g = groups.get(k); if (!g.datasets.includes(ds)) g.datasets.push(ds); g.deliveries++; g.delivery_seqs.push(d.seq);
+  }
+  const lines = [...groups.values()].sort((a, b) => (a.category + a.use < b.category + b.use ? -1 : 1));
+  lines.forEach(l => l.datasets.sort());
+  const n = u => lines.filter(l => l.use === u).reduce((s, l) => s + l.deliveries, 0);
+  return { categories_sha256: sha(canon(cats)), fee_schedule_ref: cats.fee_schedule_ref, lines,
+    totals: { agent_use: n("agent_use"), outside_agent_record: n("outside_agent_record"), outside_match: n("outside_match"), unclassified: lines.filter(l => l.category.startsWith("Unclassified")).reduce((s, l) => s + l.deliveries, 0) } };
+}
+
 export function inventoryOf(m, vlog) {
   const inP = t => Date.parse(t) >= Date.parse(m.period.from) && Date.parse(t) <= Date.parse(m.period.to);
   const matched = new Set(m.matches.map(x => x.delivery_seq)), unrec = new Set(m.unrecorded.map(x => x.delivery_seq));
@@ -33,6 +56,7 @@ export function inventoryOf(m, vlog) {
     totals: { deliveries: deliveries.length, matched: m.matches.length, delivered_no_record: m.unrecorded.length, recorded_no_delivery: m.unmatched.length },
     match_sha256: sha(canon(m)), firm_accepted_at: m.accepted ? m.accepted.accepted_at : null };
 }
+export function inventoryWith(m, vlog, cats) { const inv = inventoryOf(m, vlog); return cats === undefined ? inv : { ...inv, declaration: declarationOf(inv, cats) }; }
 
 async function getJ(u) { const r = await fetch(u); if (!r.ok) refuse("the witness did not answer " + u.split("?")[0]); return r.json(); }
 
@@ -70,7 +94,10 @@ async function usageInventory(cfg, rel, want) {
     const ok = checkDeliveries(vlog, c, { vendorPin: m.vendor_key, witnessPin: cfg.witness_key, memory: lm, requireMemory: true });
     if (!ok.ok) refuse("the vendor log copy fails against the witness: " + ok.why);
   } else refuse("unknown role " + cfg.role);
-  return inventoryOf(m, vlog);
+  // A statement that carries a declaration is signed only if this party's own category map gives the same one.
+  if (want.declaration === undefined) return inventoryOf(m, vlog);
+  if (!d.fee_categories) refuse("this party holds no fee category map, so it cannot sign a usage declaration");
+  return inventoryWith(m, vlog, JSON.parse(fs.readFileSync(rel(d.fee_categories), "utf8")));
 }
 
 function approvedCalculation(cfg, rel, want) {
