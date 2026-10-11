@@ -4,11 +4,14 @@
 //   node statement.mjs build --vendor <name> --from <iso> --to <iso> --out <dir> <session.jsonl>...   [HIVE_RECORDER_DIR for the key]
 //     writes statement.json and one copy per session for that vendor (its lines in full, the rest digest only)
 //   node statement.mjs accept <statement.json> --vendor-key-pem <file> --out <statement.json>
+//   node statement.mjs match --vendor <name> --log <deliveries.jsonl> --vendor-key-pem <file> --from <iso> --to <iso> --out <match.json> <copy.jsonl>...
+//     the vendor matches its own delivery log against the firm's copies for it, and signs the result
+//   node statement.mjs match-accept <match.json> --out <match.json>   [HIVE_RECORDER_DIR for the key]
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { canon, discloseFor, statementBody } from "./core.mjs";
+import { canon, discloseFor, statementBody, matchBody } from "./core.mjs";
 import { c } from "./verify.mjs";
 const args = process.argv.slice(2);
 const opt = n => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
@@ -32,4 +35,21 @@ if (args[0] === "build") {
   const sig = crypto.sign(null, Buffer.from(canon({ statement_sha256: c.sha256hex(canon(st)), ...a })), k).toString("base64url");
   fs.writeFileSync(opt("--out"), JSON.stringify({ ...st, accepted: { vendor_key: crypto.createPublicKey(k).export({ format: "jwk" }).x, ...a, sig } }, null, 1));
   console.log("accepted");
-} else { console.log("usage: statement.mjs build|accept ..."); process.exitCode = 2; }
+} else if (args[0] === "match") {
+  const vendor = opt("--vendor"), period = { from: new Date(opt("--from")).toISOString(), to: new Date(opt("--to")).toISOString() };
+  const skip = new Set(["--vendor", "--log", "--vendor-key-pem", "--from", "--to", "--out"]);
+  const files = args.slice(1).filter((a, i, all) => !skip.has(a) && !skip.has(all[i]) && !(i > 0 && skip.has(all[i - 1])));
+  const k = crypto.createPrivateKey(fs.readFileSync(opt("--vendor-key-pem")));
+  const b = { ...matchBody(files.map(readLines), readLines(opt("--log")), vendor, period, c), issued_at: new Date().toISOString(), vendor_key: crypto.createPublicKey(k).export({ format: "jwk" }).x };
+  const m = { ...b, sig: crypto.sign(null, Buffer.from(canon(b)), k).toString("base64url") };
+  fs.writeFileSync(opt("--out"), JSON.stringify(m, null, 1));
+  console.log(`delivery match for ${vendor}: ${m.matches.length} matched, ${m.unrecorded.length} delivered with no record, ${m.unmatched.length} recorded with no delivery`);
+} else if (args[0] === "match-accept") {
+  const { accepted, ...m } = JSON.parse(fs.readFileSync(args[1], "utf8"));
+  const dir = process.env.HIVE_RECORDER_DIR || path.join(os.homedir(), ".hive-recorder");
+  const sk = crypto.createPrivateKey(fs.readFileSync(path.join(dir, "keys", "recorder-ed25519.pem")));
+  const a = { accepted_at: new Date().toISOString() };
+  const sig = crypto.sign(null, Buffer.from(canon({ match_sha256: c.sha256hex(canon(m)), ...a })), sk).toString("base64url");
+  fs.writeFileSync(opt("--out"), JSON.stringify({ ...m, accepted: { recorder_key: crypto.createPublicKey(sk).export({ format: "jwk" }).x, ...a, sig } }, null, 1));
+  console.log("accepted by the firm");
+} else { console.log("usage: statement.mjs build|accept|match|match-accept ..."); process.exitCode = 2; }

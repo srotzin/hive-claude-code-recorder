@@ -13,7 +13,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { FORMAT, ZERO, canon, checkScope, scopeOf, digestOf, vendorOf, numbersIn } from "./core.mjs";
+import { FORMAT, ZERO, canon, checkScope, scopeOf, digestOf, vendorOf, numbersIn, DELIVERY_ID } from "./core.mjs";
 import { ml_dsa65 } from "./vendor/ml-dsa-65.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -163,6 +163,9 @@ export function describe(ev, fk, scope) {
       d.nonce = crypto.randomBytes(16).toString("hex");
       d.vals = nums.map(v => sha256hex(d.nonce + "|" + v)).sort();
       d.vals_fk = nums.map(v => fp(fk, "num:" + v)).sort();
+      // Delivery match: a vendor that keeps a delivery log puts a delivery id in the result. Keep its fingerprint.
+      const dm = vendorOf(ev.tool_name) && DELIVERY_ID.exec(typeof ev.tool_response === "string" ? ev.tool_response : JSON.stringify(ev.tool_response));
+      if (dm) d.delivery_fp = sha256hex(dm[1]);
     }
   }
   else if (e === "PostToolUseFailure") { take("input", ev.tool_input); take("error", ev.error); if (ev.is_interrupt !== undefined) d.interrupted = !!ev.is_interrupt; }

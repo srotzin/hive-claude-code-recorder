@@ -23,7 +23,7 @@ const admission = admFile ? (() => { const p = JSON.parse(fs.readFileSync(admFil
 const ID = /^[A-Za-z0-9_-]{1,120}$/;
 const EVENT = /^[A-Za-z]{1,40}$/;
 // Fields a description may carry. Anything else is refused, so content can't be smuggled in.
-const ALLOWED = new Set(["event", "session", "prompt_id", "agent", "permission_mode", "fp_cwd", "tool", "fp", "bytes", "duration_ms", "interrupted", "source", "model", "reason", "nonce", "vals", "vals_fk", "answer_fp", "answer_vals_fk"]);
+const ALLOWED = new Set(["event", "session", "prompt_id", "agent", "permission_mode", "fp_cwd", "tool", "fp", "bytes", "duration_ms", "interrupted", "source", "model", "reason", "nonce", "vals", "vals_fk", "answer_fp", "answer_vals_fk", "delivery_fp"]);
 const HEX = /^[0-9a-f]{64}$/;
 
 function check(b) {
@@ -35,6 +35,7 @@ function check(b) {
   if (d.bytes) for (const v of Object.values(d.bytes)) if (!Number.isInteger(v)) return "byte sizes must be integers";
   if (d.nonce !== undefined && !/^[0-9a-f]{32}$/.test(String(d.nonce))) return "nonce must be 32 hex characters";
   if (d.answer_fp !== undefined && !HEX.test(String(d.answer_fp))) return "answer_fp must be 64 hex characters";
+  if (d.delivery_fp !== undefined && !HEX.test(String(d.delivery_fp))) return "delivery_fp must be 64 hex characters";
   for (const k of ["vals", "vals_fk", "answer_vals_fk"]) if (d[k] !== undefined && (!Array.isArray(d[k]) || d[k].length > 500 || d[k].some(v => !HEX.test(String(v))))) return k + " must be a list of fingerprints";
   if (d.tool && (typeof d.tool.name !== "string" || d.tool.name.length > 200)) return "bad tool name";
   if (b.touched != null) {

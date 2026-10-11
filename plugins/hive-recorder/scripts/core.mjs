@@ -414,3 +414,132 @@ export function checkStatement(st, discs, c, opts = {}) {
   const tot = want.usage.reduce((a, u) => ({ asked: a.asked + u.asked, outside: a.outside + u.outside }), { asked: 0, outside: 0 });
   return { ok: true, vendor: st.vendor, sessions: want.sessions.length, ...tot, answers: want.answers.length, accepted_at: acc };
 }
+
+// Delivery match. The vendor's own server keeps a signed, chained log of what it delivered, one log per
+// customer, witnessed like a record. Each delivery carries a random id; the firm's recorder keeps a
+// fingerprint of that id on the result line. Matching the two shows pulls the recorder never saw and
+// pulls the record claims that the vendor never served. Neither side can do this from its own log.
+export const DELIVERY_FORMAT = "hive.vendor-delivery/1";
+export const MATCH_FORMAT = "hive.delivery-match/1";
+export const DELIVERY_ID = /\\?"delivery\\?"\s*:\s*\\?"(dl-[a-z]{24})\\?"/;
+//   opts: { vendorPin, witnessPin, memory: [statements fetched from the witness for this log], requireMemory }
+export function checkDeliveries(vlog, c, opts = {}) {
+  const no = (step, why) => ({ ok: false, step, why });
+  if (!Array.isArray(vlog) || !vlog.length) return no("FORMAT", "the delivery log is empty");
+  const logFp = vlog[0].log, key = opts.vendorPin;
+  let prev = "0".repeat(64);
+  for (let i = 0; i < vlog.length; i++) {
+    const { hash, sig, ...b } = vlog[i];
+    if (b.v !== DELIVERY_FORMAT || b.log !== logFp) return no("FORMAT", "delivery " + i + " is not a " + DELIVERY_FORMAT + " line of this log");
+    if (b.seq !== i || b.prev !== prev) return no("CHAIN", "expected delivery " + i + " after " + prev.slice(0, 12) + ", found delivery " + b.seq);
+    if (c.sha256hex(canon(b)) !== hash) return no("HASH", "delivery " + i + " changed after it was signed");
+    if (!key || !c.verify(key, canon(b), sig)) return no("SIGNATURE", "delivery " + i + " is not signed by the pinned vendor key");
+    prev = hash;
+  }
+  const mem = opts.memory || [];
+  if (!mem.length && opts.requireMemory) return no("WITNESS", "the witness has no memory of this delivery log");
+  let max = 0;
+  for (const w of mem) {
+    const { sig, ...st } = w;
+    if (st.v !== WITNESS_FORMAT || (opts.witnessPin && st.witness_key !== opts.witnessPin) || st.recorder_key !== key || st.session_fp !== logFp) return no("WITNESS", "a witness statement does not belong to this log");
+    if (!c.verify(st.witness_key, canon(st), sig)) return no("WITNESS", "witness signature does not verify");
+    const covered = vlog[st.count - 1];
+    if (!covered) return no("WITNESS", "the witness saw " + st.count + " deliveries in this log, and this copy has only " + vlog.length);
+    if (covered.hash !== st.head) return no("WITNESS", "the witness saw " + st.count + " deliveries ending in " + st.head.slice(0, 12) + ", and this log no longer has that");
+    max = Math.max(max, st.count);
+  }
+  if (mem.length && max < vlog.length) return no("WITNESS", "the last " + (vlog.length - max) + " deliveries in this log were never witnessed");
+  return { ok: true, deliveries: vlog.length, log_fp: logFp, head: prev, witnessed: max };
+}
+export function matchDeliveries(discs, vlog, vendor, period, c) {
+  const inP = t => !period || (Date.parse(t) >= Date.parse(period.from) && Date.parse(t) <= Date.parse(period.to));
+  const byFp = new Map(vlog.map(d => [d.delivery_fp, d]));
+  const used = new Set(), matches = [], unmatched = [];
+  for (const lines of discs) {
+    const sfp = c.sha256hex(String(lines[0].session));
+    const pre = new Map(lines.filter(l => !l.redacted && l.event === "PreToolUse" && l.tool).map(l => [l.tool.use_id, l]));
+    for (const l of lines) {
+      if (l.redacted || l.event !== "PostToolUse" || l.vendor !== vendor) continue;
+      const d = l.delivery_fp && byFp.get(l.delivery_fp);
+      if (!l.delivery_fp) { unmatched.push({ session_fp: sfp, seq: l.seq, why: "the result carries no delivery id" }); continue; }
+      if (!d) { unmatched.push({ session_fp: sfp, seq: l.seq, why: "the vendor's log has no such delivery" }); continue; }
+      if (used.has(d.delivery_fp)) { unmatched.push({ session_fp: sfp, seq: l.seq, why: "delivery " + d.seq + " is already matched to another line" }); continue; }
+      used.add(d.delivery_fp);
+      const p = pre.get(l.tool.use_id), asked = [...((p && p.scope && p.scope.touched.datasets) || [])].sort(), got = [...d.datasets].sort();
+      if (canon(asked) !== canon(got)) { unmatched.push({ session_fp: sfp, seq: l.seq, why: "the record asked for " + (asked.join(", ") || "nothing") + ", and the vendor delivered " + got.join(", ") }); continue; }
+      matches.push({ session_fp: sfp, seq: l.seq, delivery_seq: d.seq, datasets: got });
+    }
+  }
+  const unrecorded = vlog.filter(d => !used.has(d.delivery_fp) && inP(d.t)).map(d => ({ delivery_seq: d.seq, t: d.t, tool: d.tool, datasets: d.datasets }));
+  return { matches, unrecorded, unmatched };
+}
+export function matchBody(discs, vlog, vendor, period, c) {
+  const last = vlog[vlog.length - 1];
+  const sessions = discs.map(L => ({ session_fp: c.sha256hex(String(L[0].session)), count: L.length, head: L[L.length - 1].hash })).sort((a, b) => a.session_fp < b.session_fp ? -1 : 1);
+  return { v: MATCH_FORMAT, vendor, customer: vlog[0].customer, recorder_key: discs[0][0].public_key, period, sessions,
+    log: { log_fp: vlog[0].log, count: vlog.length, head: last.hash }, ...matchDeliveries(discs, vlog, vendor, period, c) };
+}
+//   m: { ...matchBody, issued_at, vendor_key, sig, accepted?: { recorder_key, accepted_at, sig } }
+//   opts: { recorderPin, vendorPin, witnessPin, memory: { [session_fp]: statements }, logMemory: statements, witnessSessions }
+export function checkMatch(m, discs, vlog, c, opts = {}) {
+  const no = (step, why) => ({ ok: false, step, why });
+  if (!m || m.v !== MATCH_FORMAT) return no("FORMAT", "not a " + MATCH_FORMAT);
+  const { sig, accepted, ...b } = m;
+  if (opts.vendorPin && m.vendor_key !== opts.vendorPin) return no("SIGNATURE", "the match names a vendor key other than the pinned one");
+  if (!c.verify(m.vendor_key, canon(b), sig)) return no("SIGNATURE", "the match is not signed by the vendor key");
+  for (const lines of discs) {
+    const sfp = c.sha256hex(String(lines[0].session));
+    const r = verifyRecord(lines, c, { pin: opts.recorderPin || m.recorder_key, allowRedacted: true, discloseFor: m.vendor, witnessPin: opts.witnessPin, memory: { statements: (opts.memory || {})[sfp] || [] }, requireMemory: true });
+    if (!r.ok) return no("RECORD", "session " + sfp.slice(0, 12) + ": " + r.first_failure.gate + ", " + r.first_failure.why);
+  }
+  const d = checkDeliveries(vlog, c, { vendorPin: m.vendor_key, witnessPin: opts.witnessPin, memory: opts.logMemory || [], requireMemory: true });
+  if (!d.ok) return no("DELIVERIES", d.step + ", " + d.why);
+  if (opts.witnessSessions) {
+    const from = Date.parse(m.period.from), to = Date.parse(m.period.to);
+    for (const w of opts.witnessSessions) {
+      const t = Date.parse(w.last_at);
+      if (!(t >= from && t <= to)) continue;
+      const s = m.sessions.find(x => x.session_fp === w.session_fp);
+      if (!s) return no("COMPLETE", "the witness saw session " + w.session_fp.slice(0, 12) + " (" + w.count + " lines) in this period, and the match leaves it out");
+      if (s.count < w.count) return no("COMPLETE", "the witness saw " + w.count + " lines for session " + w.session_fp.slice(0, 12) + ", and the match covers " + s.count);
+    }
+  }
+  const want = matchBody(discs, vlog, m.vendor, m.period, c);
+  for (const k of ["sessions", "log", "matches", "unrecorded", "unmatched"]) if (canon(want[k]) !== canon(b[k])) return no("MATCH", "the match's " + k + " does not agree with the two logs");
+  let acc = null;
+  if (accepted) {
+    const ok = c.verify(accepted.recorder_key, canon({ match_sha256: c.sha256hex(canon({ ...b, sig })), accepted_at: accepted.accepted_at }), accepted.sig);
+    if (!ok || accepted.recorder_key !== (opts.recorderPin || m.recorder_key)) return no("ACCEPTED", "the firm's acceptance does not match this delivery match");
+    acc = accepted.accepted_at;
+  }
+  return { ok: true, matched: want.matches.length, unrecorded: want.unrecorded.length, unmatched: want.unmatched.length, deliveries: vlog.length, accepted_at: acc };
+}
+// Figures an answer computed from a vendor's data. The vendor holds what it delivered (vpriv: [{ seq, delivery_id, body }]),
+// so given the answer, it can tell which figures it repeats and which it derived: a sum or an average of a field.
+export function checkDerived(lines, text, vlog, vpriv, vendor, c) {
+  const a = checkAnswer(lines, text, c);
+  if (!a.ok) return { ok: false, step: "ANSWER", why: a.why };
+  const { matches } = matchDeliveries([lines], vlog, vendor, null, c);
+  // Every pull of this vendor's data before the answer, not only the ones the firm's trail names:
+  // a figure the agent computed can come from a result whose own figures the answer never repeats.
+  const before = lines.filter(l => !l.redacted && l.answer && l.seq < a.stop_seq).reduce((x, l) => Math.max(x, l.seq), -1);
+  const nums = numbersIn(text), direct = [], derived = [], seen = new Set();
+  for (const mt of matches) {
+    if (!(mt.seq > before && mt.seq < a.stop_seq)) continue;
+    const d = vlog[mt.delivery_seq], p = (vpriv || []).find(x => x.seq === mt.delivery_seq);
+    if (!p || c.sha256hex(p.delivery_id) !== d.delivery_fp || c.sha256hex(canon(p.body)) !== d.body_sha256) return { ok: false, step: "BODY", why: "the vendor's copy of delivery " + mt.delivery_seq + " is not the one its log signed" };
+    const inBody = new Set(numbersIn(canon(p.body)));
+    const fields = {};
+    const walk = v => { if (Array.isArray(v)) { for (const o of v) if (o && typeof o === "object" && !Array.isArray(o)) for (const [k, x] of Object.entries(o)) if (typeof x === "number") (fields[k] = fields[k] || []).push(x); v.forEach(walk); } else if (v && typeof v === "object") Object.values(v).forEach(walk); };
+    walk(p.body);
+    for (const n of nums) {
+      if (inBody.has(n) && !seen.has("d" + mt.delivery_seq + n)) { seen.add("d" + mt.delivery_seq + n); direct.push({ figure: n, delivery_seq: mt.delivery_seq, seq: mt.seq }); }
+      for (const [k, xs] of Object.entries(fields)) {
+        if (xs.length < 2) continue;
+        const sum = xs.reduce((s, x) => s + x, 0);
+        for (const [op, v] of [["sum", sum], ["average", sum / xs.length]]) if (String(Math.round(v * 1e6) / 1e6) === n) derived.push({ figure: n, op, field: k, n: xs.length, delivery_seq: mt.delivery_seq, seq: mt.seq });
+      }
+    }
+  }
+  return { ok: true, stop_seq: a.stop_seq, direct, derived };
+}
