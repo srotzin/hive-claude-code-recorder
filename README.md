@@ -103,6 +103,17 @@ When the admission lists `entitlements`, one set of datasets per vendor, the rec
 
 `HIVE_TEST_PG=postgres://... node tests/vendors.mjs` runs 22 checks on all four, with a real witness and Postgres.
 
+## Matching the vendor's deliveries to the firm's record (1.4)
+
+A firm's record shows what its agent pulled. A vendor's server log shows what it delivered. Neither is enough alone: the firm can't show a pull it never recorded, and the firm can't check the vendor's log. 1.4 joins the two.
+
+- **The vendor's delivery log.** `vendor-kit/delivery-log.mjs` is a small library for a data vendor's server. Each delivery is signed with the vendor's key, chained to the one before it, and its head is sent to the witness before the data goes out. The delivery carries a random id back to the customer inside the result. The vendor keeps what it delivered in a private side file. Only the vendor key, a hash of the log name, a count and a head hash reach the witness.
+- **The firm's side.** When a vendor result carries a delivery id, the recorder keeps a fingerprint of it on the result line (`delivery_fp`).
+- **The match.** `node statement.mjs match --vendor market-data --log deliveries.jsonl --vendor-key-pem vendor.pem --from ... --to ... --out match.json copy-1.jsonl copy-2.jsonl` pairs every delivery with a result line. It lists deliveries the firm's recorder never saw, and result lines the vendor never served. The vendor signs it; `match-accept` lets the firm countersign. `checkMatch` rebuilds it from both logs, checks both against the witness, and fails if the witness saw a session in the period that the match leaves out.
+- **Derived figures.** The vendor holds what it delivered, so given the answer, `checkDerived` tells which figures the answer repeats and which it computed: a sum or an average of a delivered field.
+
+`HIVE_TEST_PG=postgres://... node tests/deliveries.mjs` runs 16 checks with a real witness and Postgres. `examples/claude-code-deliveries/` holds two real Claude Code sessions and one pull made straight from the vendor, outside the agent. `node tests/delivery-tamper.mjs <vendor-key.pem>` checks it against the live witness, with 9 rewrites, all rejected.
+
 ## Rules it keeps
 
 - Always exits 0 and prints nothing, so it can never block, deny or change a tool call. It is not a permission check.

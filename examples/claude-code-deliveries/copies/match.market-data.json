@@ -1,0 +1,72 @@
+{
+ "v": "hive.delivery-match/1",
+ "vendor": "market-data",
+ "customer": "firm-demo-2",
+ "recorder_key": "IyC-i5liFGbjfJm1zMESe73_tt1vk4BNotjZA94umDY",
+ "period": {
+  "from": "2026-10-11T00:46:07.000Z",
+  "to": "2026-10-11T00:47:05.000Z"
+ },
+ "sessions": [
+  {
+   "session_fp": "68d901f640d24abe00e9ca294ed6a81c08285b029d0dd15f93645bd6988e76bc",
+   "count": 14,
+   "head": "46d0d5d8af3c08421494a227631452c5a178f0adf746020aa2f4469614c199fc"
+  },
+  {
+   "session_fp": "b08219acf2055c8acf12976edde0318853e32750f90a9546d7da7e1ec1675c05",
+   "count": 18,
+   "head": "3522ec052f51425d90377d219b11c902b0e70a9cb223c76085dc0df1bfb3ea16"
+  }
+ ],
+ "log": {
+  "log_fp": "4cb26f08acd32671159f13ddd576a6b8dc09c7c2bdc0bd496c199b6669ebf2b8",
+  "count": 4,
+  "head": "cba95cff4bdb66134f4a308fcfe6a4e02035033c7deb29f54f18cb1fff9f0b67"
+ },
+ "matches": [
+  {
+   "session_fp": "b08219acf2055c8acf12976edde0318853e32750f90a9546d7da7e1ec1675c05",
+   "seq": 9,
+   "delivery_seq": 0,
+   "datasets": [
+    "futures.brent.eod"
+   ]
+  },
+  {
+   "session_fp": "b08219acf2055c8acf12976edde0318853e32750f90a9546d7da7e1ec1675c05",
+   "seq": 11,
+   "delivery_seq": 1,
+   "datasets": [
+    "mortgage.loan-level"
+   ]
+  },
+  {
+   "session_fp": "68d901f640d24abe00e9ca294ed6a81c08285b029d0dd15f93645bd6988e76bc",
+   "seq": 9,
+   "delivery_seq": 2,
+   "datasets": [
+    "futures.wti.eod"
+   ]
+  }
+ ],
+ "unrecorded": [
+  {
+   "delivery_seq": 3,
+   "t": "2026-10-11T00:47:01.812Z",
+   "tool": "get_records",
+   "datasets": [
+    "mortgage.loan-level"
+   ]
+  }
+ ],
+ "unmatched": [],
+ "issued_at": "2026-10-11T00:47:20.231Z",
+ "vendor_key": "fzRLBYluTLJaa2DW8T11AaBbIH2OUE8hk8akjX9BNgI",
+ "sig": "yY7Vl9W3Qok1P_QeAfbISZ8LoKHXs37e10uC1EOgOBBxl8_MZnbI9-N66Nr_D8F34MqljRjtFviD0lIFO7u7Cg",
+ "accepted": {
+  "recorder_key": "IyC-i5liFGbjfJm1zMESe73_tt1vk4BNotjZA94umDY",
+  "accepted_at": "2026-10-11T00:47:20.280Z",
+  "sig": "YOQYCKlevGoJ8KEe4SOqcWOJNpWss3eWMiXXiWjWV7pF-FfgKAYIpzYDBnSf7lMry-R0o0b6oeTJnXZqxR3qBw"
+ }
+}

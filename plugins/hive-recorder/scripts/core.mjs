@@ -448,7 +448,7 @@ export function checkDeliveries(vlog, c, opts = {}) {
     if (covered.hash !== st.head) return no("WITNESS", "the witness saw " + st.count + " deliveries ending in " + st.head.slice(0, 12) + ", and this log no longer has that");
     max = Math.max(max, st.count);
   }
-  if (mem.length && max < vlog.length) return no("WITNESS", "the last " + (vlog.length - max) + " deliveries in this log were never witnessed");
+  if (mem.length && max < vlog.length) return no("WITNESS", vlog.length - max === 1 ? "the last delivery in this log was never witnessed" : "the last " + (vlog.length - max) + " deliveries in this log were never witnessed");
   return { ok: true, deliveries: vlog.length, log_fp: logFp, head: prev, witnessed: max };
 }
 export function matchDeliveries(discs, vlog, vendor, period, c) {

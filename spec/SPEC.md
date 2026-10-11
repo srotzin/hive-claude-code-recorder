@@ -250,6 +250,16 @@ A `PostToolUse` split line carries `vals`: SHA-256 of `nonce + "|" + figure` for
 
 `hive.licence-statement/1` sums one vendor's usage over a period from that vendor's copies: sessions (fingerprint, line count, last hash), the entitlement, pulls per dataset (asked, ran, outside), each pull outside the entitlement, and each answer that drew on the vendor's data. It is signed with the recorder key. The vendor may accept it by signing `{ statement_sha256, accepted_at }` with its own key. A checker rebuilds every number from the copies, checks every copy against the witness's memory, and asks the witness for every session it remembers for that recorder key in the period (`GET /v1/witness/sessions?recorder_key=&from=&to=`). A session the witness saw and the statement leaves out fails the check.
 
+## Delivery match (1.4)
+
+`hive.vendor-delivery/1` is a vendor-side line: `{ v, seq, prev, t, vendor, customer, log, tool, datasets, delivery_fp, body_sha256, hash, sig }`. `log` is the SHA-256 of the log name, one log per customer. `hash` is SHA-256 of the canonical line without `hash` and `sig`; `sig` is Ed25519 by the vendor key over the same bytes. `delivery_fp` is SHA-256 of the delivery id (`dl-` and 24 lowercase letters, so it adds no figures to a result). `body_sha256` is SHA-256 of the canonical delivered body, which the vendor keeps. The vendor sends `{ recorder_key: vendor key, session_fp: log, count, head, req_sig }` to the witness for each delivery, the same request a recorder sends.
+
+A recorder that finds a delivery id in a vendor result adds `delivery_fp` to that result line.
+
+`hive.delivery-match/1` is `{ v, vendor, customer, recorder_key, period, sessions, log: { log_fp, count, head }, matches, unrecorded, unmatched, issued_at, vendor_key, sig, accepted? }`. `matches` pairs result lines with deliveries whose datasets agree. `unrecorded` lists deliveries in the period with no result line. `unmatched` lists result lines with no delivery id, an unknown delivery, a reused delivery, or a different dataset. The vendor signs everything except `sig` and `accepted`. `accepted` is `{ recorder_key, accepted_at, sig }`, signed by the recorder key over `{ match_sha256, accepted_at }`, where `match_sha256` covers the match with the vendor's `sig`.
+
+Check steps, in order: `FORMAT`, `SIGNATURE`, `RECORD` (each copy against the witness), `DELIVERIES` (the vendor log's chain, signatures and witness memory, with the last delivery witnessed), `COMPLETE`, `MATCH` (rebuilt from both logs), `ACCEPTED`. The derived-figure check adds `ANSWER` and `BODY` (the vendor's kept body must match its signed line).
+
 ## Limits
 
 - The record is only as complete as the runtime's hooks. Events the runtime does not report are not recorded.

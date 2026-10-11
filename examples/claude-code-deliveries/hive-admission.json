@@ -1,0 +1,11 @@
+{
+  "purpose": "Check yesterday's Brent and WTI settlements and the issuer record for the risk report.",
+  "tools": ["Read", "ToolSearch", "mcp__market-data__get_eod", "mcp__market-data__get_records", "mcp__ref-data__get_issuer"],
+  "paths": ["**"],
+  "hosts": [],
+  "entitlements": {
+    "market-data": ["futures.brent.*", "futures.wti.eod"],
+    "ref-data": ["issuers.reference"]
+  },
+  "labels": { "sandbox": "two-vendor-eval-1", "operator": "hive-demo" }
+}

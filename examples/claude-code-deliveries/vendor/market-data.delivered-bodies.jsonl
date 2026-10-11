@@ -1,0 +1,4 @@
+{"seq":0,"delivery_id":"dl-irbodtpliepojdvtegoljhol","body":{"dataset":"futures.brent.eod","date":"2026-10-10","settle":84.12,"currency":"USD","note":"stand-in value"}}
+{"seq":1,"delivery_id":"dl-uoniwrtidnsqbxdjlmfdfoso","body":{"dataset":"mortgage.loan-level","rows":[{"loan":"L1000","balance":250000},{"loan":"L1001","balance":251000},{"loan":"L1002","balance":252000},{"loan":"L1003","balance":253000},{"loan":"L1004","balance":254000}],"note":"stand-in rows"}}
+{"seq":2,"delivery_id":"dl-pzzagygrgbevsiaozfywceoe","body":{"dataset":"futures.wti.eod","date":"2026-10-10","settle":84.12,"currency":"USD","note":"stand-in value"}}
+{"seq":3,"delivery_id":"dl-ywasvtbalubsbvszvxyscmks","body":{"dataset":"mortgage.loan-level","rows":[{"loan":"L1000","balance":250000},{"loan":"L1001","balance":251000},{"loan":"L1002","balance":252000},{"loan":"L1003","balance":253000},{"loan":"L1004","balance":254000}],"note":"stand-in rows"}}

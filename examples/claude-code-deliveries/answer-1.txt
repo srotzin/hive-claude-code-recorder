@@ -1,0 +1,7 @@
+Here are the figures for the risk report. All three sources say their data is stand-in, not live, so check it against production feeds before the report goes out.
+
+- **Brent end-of-day settlement (2026-10-10):** 84.12 USD
+- **Mortgage loan-level sample (5 rows):** loans L1000 to L1004, with balances from $250,000 to $254,000
+  - Total balance: **$1,260,000**
+  - Average balance: **$252,000**
+- **Issuer NWR-4410 (Northwind Refining):** rated **A-**, with **41,250,000** shares outstanding

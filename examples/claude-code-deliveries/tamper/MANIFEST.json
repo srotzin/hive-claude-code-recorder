@@ -1,0 +1,154 @@
+[
+ {
+  "group": "deliveries",
+  "id": "outside-pull-erased",
+  "what": "The vendor erases the pull made outside the agent, and re-signs its log",
+  "kind": "match",
+  "files": {
+   "match.json": "../copies/match.market-data.json",
+   "s1.jsonl": "../copies/session-1.market-data.jsonl",
+   "s2.jsonl": "../copies/session-2.market-data.jsonl",
+   "vlog.jsonl": "outside-pull-erased.vlog.jsonl",
+   "bodies.jsonl": "../vendor/market-data.delivered-bodies.jsonl",
+   "answer": "../answer-1.txt"
+  },
+  "expected": "DELIVERIES",
+  "got": "DELIVERIES",
+  "why": "WITNESS, the witness saw 4 deliveries in this log, and this copy has only 3"
+ },
+ {
+  "group": "deliveries",
+  "id": "delivery-invented",
+  "what": "The vendor adds a delivery that never happened, to bill for it, and re-signs",
+  "kind": "match",
+  "files": {
+   "match.json": "../copies/match.market-data.json",
+   "s1.jsonl": "../copies/session-1.market-data.jsonl",
+   "s2.jsonl": "../copies/session-2.market-data.jsonl",
+   "vlog.jsonl": "delivery-invented.vlog.jsonl",
+   "bodies.jsonl": "../vendor/market-data.delivered-bodies.jsonl",
+   "answer": "../answer-1.txt"
+  },
+  "expected": "DELIVERIES",
+  "got": "DELIVERIES",
+  "why": "WITNESS, the last delivery in this log was never witnessed"
+ },
+ {
+  "group": "deliveries",
+  "id": "dataset-relabelled",
+  "what": "The vendor relabels the mortgage delivery as Brent, and re-signs",
+  "kind": "match",
+  "files": {
+   "match.json": "../copies/match.market-data.json",
+   "s1.jsonl": "../copies/session-1.market-data.jsonl",
+   "s2.jsonl": "../copies/session-2.market-data.jsonl",
+   "vlog.jsonl": "dataset-relabelled.vlog.jsonl",
+   "bodies.jsonl": "../vendor/market-data.delivered-bodies.jsonl",
+   "answer": "../answer-1.txt"
+  },
+  "expected": "DELIVERIES",
+  "got": "DELIVERIES",
+  "why": "WITNESS, the witness saw 2 deliveries ending in 294482078dc0, and this log no longer has that"
+ },
+ {
+  "group": "match",
+  "id": "outside-pull-hidden",
+  "what": "The match leaves out the pull the recorder never saw",
+  "kind": "match",
+  "files": {
+   "match.json": "outside-pull-hidden.match.json",
+   "s1.jsonl": "../copies/session-1.market-data.jsonl",
+   "s2.jsonl": "../copies/session-2.market-data.jsonl",
+   "vlog.jsonl": "../vendor/market-data.deliveries.jsonl",
+   "bodies.jsonl": "../vendor/market-data.delivered-bodies.jsonl",
+   "answer": "../answer-1.txt"
+  },
+  "expected": "MATCH",
+  "got": "MATCH",
+  "why": "the match's unrecorded does not agree with the two logs"
+ },
+ {
+  "group": "match",
+  "id": "session-left-out",
+  "what": "The match leaves out a session the witness saw",
+  "kind": "match",
+  "files": {
+   "match.json": "session-left-out.match.json",
+   "s1.jsonl": "../copies/session-1.market-data.jsonl",
+   "vlog.jsonl": "../vendor/market-data.deliveries.jsonl",
+   "bodies.jsonl": "../vendor/market-data.delivered-bodies.jsonl",
+   "answer": "../answer-1.txt"
+  },
+  "expected": "COMPLETE",
+  "got": "COMPLETE",
+  "why": "the witness saw session 68d901f640d2 (14 lines) in this period, and the match leaves it out"
+ },
+ {
+  "group": "match",
+  "id": "copy-fingerprint-changed",
+  "what": "The firm's copy points a pull at a different delivery",
+  "kind": "match",
+  "files": {
+   "match.json": "../copies/match.market-data.json",
+   "s1.jsonl": "copy-fingerprint-changed.s1.jsonl",
+   "s2.jsonl": "../copies/session-2.market-data.jsonl",
+   "vlog.jsonl": "../vendor/market-data.deliveries.jsonl",
+   "bodies.jsonl": "../vendor/market-data.delivered-bodies.jsonl",
+   "answer": "../answer-1.txt"
+  },
+  "expected": "RECORD",
+  "got": "RECORD",
+  "why": "session b08219acf205: ENTRY_HASH, line 9 changed after it was signed"
+ },
+ {
+  "group": "match",
+  "id": "acceptance-moved",
+  "what": "The firm's acceptance is moved onto a different match",
+  "kind": "match",
+  "files": {
+   "match.json": "acceptance-moved.match.json",
+   "s1.jsonl": "../copies/session-1.market-data.jsonl",
+   "s2.jsonl": "../copies/session-2.market-data.jsonl",
+   "vlog.jsonl": "../vendor/market-data.deliveries.jsonl",
+   "bodies.jsonl": "../vendor/market-data.delivered-bodies.jsonl",
+   "answer": "../answer-1.txt"
+  },
+  "expected": "ACCEPTED",
+  "got": "ACCEPTED",
+  "why": "the firm's acceptance does not match this delivery match"
+ },
+ {
+  "group": "derived",
+  "id": "rows-swapped",
+  "what": "The vendor swaps the delivered rows to change what the answer was built from",
+  "kind": "derived",
+  "files": {
+   "match.json": "../copies/match.market-data.json",
+   "s1.jsonl": "../copies/session-1.market-data.jsonl",
+   "s2.jsonl": "../copies/session-2.market-data.jsonl",
+   "vlog.jsonl": "../vendor/market-data.deliveries.jsonl",
+   "bodies.jsonl": "rows-swapped.bodies.jsonl",
+   "answer": "../answer-1.txt"
+  },
+  "expected": "BODY",
+  "got": "BODY",
+  "why": "the vendor's copy of delivery 1 is not the one its log signed"
+ },
+ {
+  "group": "derived",
+  "id": "total-changed",
+  "what": "The firm hands over the answer with the total changed",
+  "kind": "derived",
+  "files": {
+   "match.json": "../copies/match.market-data.json",
+   "s1.jsonl": "../copies/session-1.market-data.jsonl",
+   "s2.jsonl": "../copies/session-2.market-data.jsonl",
+   "vlog.jsonl": "../vendor/market-data.deliveries.jsonl",
+   "bodies.jsonl": "../vendor/market-data.delivered-bodies.jsonl",
+   "answer": "total-changed.answer"
+  },
+  "expected": "ANSWER",
+  "got": "ANSWER",
+  "why": "this answer is not the one recorded at the end of any turn in this record"
+ }
+]
