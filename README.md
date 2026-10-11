@@ -125,6 +125,16 @@ The witness is run by Hive, so a reasonable question is who checks the witness. 
 
 `node tests/log.mjs` runs 24 checks on the log, `node tests/gateway.mjs` 12 on the gateway in JSON and SSE modes, `node tests/derived.mjs` 6 on the precision rules. `examples/claude-code-gateway/` is two real Claude Code sessions over HTTP through the gateway, against the live witness and its public log; `node tests/gateway-live.mjs` checks it with 9 rewrites, all rejected.
 
+## A key no one holds, and a passport for the answer (2.0)
+
+Two additions, both live against the public log. The full spec is `spec/SHARED-KEY-AND-PASSPORT.md`.
+
+**The shared key** (`shared-key/`). One Ed25519 key, held 2 of 3 by the data vendor, the customer firm and Hive, using FROST (RFC 9591). Any two can sign; one alone cannot, and Hive alone cannot. Each holder runs `party.mjs` on its own machine with its own identity key. The signer has no function that signs an arbitrary message: it cosigns a log checkpoint only after checking the log's signature and a consistency proof from the last tree it signed, and it signs a statement only if the statement equals what that holder computed from its own records. `coordinator.mjs` relays messages and holds no share. The live key `xu6G1gCIcQNIfWSNXB7SwR1sSg2sMME-yjjSLcX495Q` signed its own ceremony record, a usage inventory and an approved calculation onto the log, and cosigned the live checkpoint with three different pairs. `shared-key/live/` has every transcript.
+
+**The answer passport** (`passport/`). A zero-knowledge proof that a figure in an agent's answer is the approved calculation over exactly the values a vendor delivered and exactly the weights a firm committed to first. The vendor's gateway puts a Poseidon commitment in each signed delivery and gives the salt only to the customer. The firm logs a commitment to its weights. After a real Claude Code session computed a par-weighted spread, `prove.mjs` builds a PLONK proof from the session transcript, and `verify.mjs` checks it offline in seven steps. The passport reveals the result and three commitments, and no yields, benchmarks or weights. `examples/answer-passport/` has the live passport and ten refusal cases.
+
+`node tests/shared-key.mjs` runs 39 checks on key creation, signing and refusals, against a local log and a second log with a different history. `node tests/passport.mjs` runs 21, with the network switched off. `.github/workflows/reproducible.yml` rebuilds the signer and the circuits from source and compares them with the committed files.
+
 ## Rules it keeps
 
 - Always exits 0 and prints nothing, so it can never block, deny or change a tool call. It is not a permission check.
@@ -149,6 +159,6 @@ The record format is `hive.agent-action/1`. The spec is in `spec/SPEC.md` and th
 
 ## Limits
 
-A record proves what the runtime reported, in what order, and that it didn't change afterwards. It does not prove an action was right or authorized, and it can't include events the runtime never reported. In plugin mode the keys sit on the agent's machine; in service mode they don't. The public log and cosigners make Hive's witness accountable; they don't make it independent. A record rebuilt from scratch later, with every time faked, has to show when it was really rebuilt, because the public timestamps carry a time no party to the session controls. The scope check only sees what a tool's input names: a host reached by a program the agent starts is not seen. Every line is signed with Ed25519; ML-DSA-65 is optional.
+A record proves what the runtime reported, in what order, and that it didn't change afterwards. It does not prove an action was right or authorized, and it can't include events the runtime never reported. In plugin mode the keys sit on the agent's machine; in service mode they don't. The public log and cosigners make Hive's witness accountable; they don't make it independent. A record rebuilt from scratch later, with every time faked, has to show when it was really rebuilt, because the public timestamps carry a time no party to the session controls. The scope check only sees what a tool's input names: a host reached by a program the agent starts is not seen. Every line is signed with Ed25519; ML-DSA-65 is optional. In the shared-key demo, Hive ran all three stand-in holders and made their identity keys; the holders' shares are sealed under a passphrase, not held in attested hardware. The passport proves the arithmetic and its inputs, not that the vendor's values or the chosen calculation are right.
 
 MIT licensed. Hive, https://thehiveryiq.com

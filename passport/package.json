@@ -1,0 +1,9 @@
+{
+  "name": "hive-answer-passport",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Zero-knowledge proof that an AI agent's figure is the approved calculation over vendor-delivered values and firm-committed weights.",
+  "license": "MIT",
+  "dependencies": { "snarkjs": "0.7.5", "circomlib": "2.0.5" }
+}

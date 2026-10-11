@@ -8,9 +8,31 @@ const MODE = process.env.MODE || "json";
 const tools = [
   { name: "get_eod", description: "End-of-day settlement and prior settlement for a futures dataset. Stand-in data.", inputSchema: { type: "object", properties: { dataset: { type: "string", description: "e.g. futures.brent.eod or futures.wti.eod" }, date: { type: "string" } }, required: ["dataset"] } },
   { name: "get_records", description: "Rows from a licensed dataset. Stand-in data.", inputSchema: { type: "object", properties: { dataset: { type: "string", description: "e.g. mortgage.loan-level" }, limit: { type: "integer" } }, required: ["dataset"] } },
+  { name: "get_bond_evaluations", description: "Evaluated yield to maturity for corporate bonds, end of day. Stand-in data for fictional bonds DEMOBND01 to DEMOBND08.", inputSchema: { type: "object", properties: { dataset: { type: "string", enum: ["bonds.evaluated-pricing"] }, cusips: { type: "array", items: { type: "string" }, description: "bond identifiers, returned in the order given" }, date: { type: "string" } }, required: ["dataset", "cusips"] } },
+  { name: "get_benchmark_yields", description: "Maturity-matched Treasury benchmark yield for each bond, end of day. Stand-in data.", inputSchema: { type: "object", properties: { dataset: { type: "string", enum: ["bonds.benchmark-yields"] }, cusips: { type: "array", items: { type: "string" }, description: "bond identifiers, returned in the order given" }, date: { type: "string" } }, required: ["dataset", "cusips"] } },
 ];
+// Fictional bonds. Yields in percent to three decimals.
+const BONDS = {
+  DEMOBND01: { issuer: "Demo Utilities", coupon: 4.25, maturity: "2029-06-15", yield_pct: 4.912, benchmark: "UST 3Y", benchmark_yield_pct: 3.874 },
+  DEMOBND02: { issuer: "Demo Rail", coupon: 5.10, maturity: "2031-03-01", yield_pct: 5.287, benchmark: "UST 5Y", benchmark_yield_pct: 3.968 },
+  DEMOBND03: { issuer: "Demo Telecom", coupon: 5.75, maturity: "2033-09-15", yield_pct: 5.731, benchmark: "UST 7Y", benchmark_yield_pct: 4.102 },
+  DEMOBND04: { issuer: "Demo Health", coupon: 4.60, maturity: "2030-01-15", yield_pct: 4.806, benchmark: "UST 3Y", benchmark_yield_pct: 3.874 },
+  DEMOBND05: { issuer: "Demo Energy", coupon: 6.20, maturity: "2035-11-01", yield_pct: 6.344, benchmark: "UST 10Y", benchmark_yield_pct: 4.236 },
+  DEMOBND06: { issuer: "Demo Retail", coupon: 5.40, maturity: "2032-05-15", yield_pct: 5.958, benchmark: "UST 7Y", benchmark_yield_pct: 4.102 },
+  DEMOBND07: { issuer: "Demo Bank", coupon: 4.95, maturity: "2031-08-01", yield_pct: 5.163, benchmark: "UST 5Y", benchmark_yield_pct: 3.968 },
+  DEMOBND08: { issuer: "Demo Insurance", coupon: 5.05, maturity: "2034-02-15", yield_pct: 5.402, benchmark: "UST 10Y", benchmark_yield_pct: 4.236 },
+};
 const EOD = { "futures.brent.eod": { settle: 84.12, prior_settle: 81.9 }, "futures.wti.eod": { settle: 79.35, prior_settle: 78.6 } };
 function call(name, a) {
+  if (name === "get_bond_evaluations" || name === "get_benchmark_yields") {
+    const want = name === "get_bond_evaluations" ? "bonds.evaluated-pricing" : "bonds.benchmark-yields";
+    if (a.dataset !== want) return { error: "dataset must be " + want };
+    const ids = (Array.isArray(a.cusips) ? a.cusips : []).map(String);
+    const missing = ids.filter(c => !BONDS[c]); if (missing.length) return { error: "unknown bonds: " + missing.join(", ") };
+    const rows = ids.map(c => name === "get_bond_evaluations" ? { cusip: c, issuer: BONDS[c].issuer, coupon: BONDS[c].coupon, maturity: BONDS[c].maturity, yield_pct: BONDS[c].yield_pct }
+      : { cusip: c, maturity: BONDS[c].maturity, benchmark: BONDS[c].benchmark, benchmark_yield_pct: BONDS[c].benchmark_yield_pct });
+    return { dataset: name === "get_bond_evaluations" ? "bonds.evaluated-pricing" : "bonds.benchmark-yields", date: a.date || "2026-10-09", rows, note: "stand-in values for fictional bonds" };
+  }
   if (name === "get_eod") { const v = EOD[a.dataset] || { settle: 70.5, prior_settle: 70.1 }; return { dataset: a.dataset, date: a.date || "2026-10-09", ...v, currency: "USD", note: "stand-in value" }; }
   return { dataset: a.dataset, rows: Array.from({ length: Math.min(a.limit || 5, 5) }, (_, i) => ({ loan: "L" + (1000 + i), balance: 250000 + i * 1000 })), note: "stand-in rows" };
 }

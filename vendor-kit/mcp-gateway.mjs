@@ -15,12 +15,18 @@
 //   gateway.json: { "port": 8812, "upstream": "http://127.0.0.1:8811/mcp", "vendor": "market-data",
 //                   "key": "/path/vendor.pem", "logs": "/path/dir", "witnesses": ["https://witness.thehiveryiq.com/v1/witness"],
 //                   "customers": { "<sha256 of bearer token>": "firm-demo" }, "default_customer": null,
-//                   "dataset_arg": "dataset", "id_in_content": true, "fail": "closed" | "open" }
+//                   "dataset_arg": "dataset", "id_in_content": true, "fail": "closed" | "open",
+//                   "commit": { "<tool>": { "dataset": "bonds.evaluated-pricing", "rows": "rows", "id": "cusip", "value": "yield_pct", "scale": 1000 } } }
+// With a commit profile for a tool, the signed delivery line also carries a Poseidon commitment to the delivered
+// values (lib/commit.mjs), and the random salt goes back only to the customer, in _meta and in the extra text
+// block. With the values and the salt the customer can later prove a calculation over exactly those values
+// (passport/) without showing them; without the salt nobody can test guesses against the commitment.
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { openDeliveryLog } from "./delivery-log.mjs";
+import { commitRows, saltToText } from "./lib/commit.mjs";
 
 const NS = "com.thehiveryiq/delivery";
 const sha = s => crypto.createHash("sha256").update(s).digest("hex");
@@ -42,18 +48,21 @@ export function startGateway(cfg) {
   async function stamp(msg, call, customer) {
     if (!msg || msg.id === undefined || msg.error || !msg.result || msg.result.isError) return msg;
     const a = call.params?.arguments || {}, tool = call.params?.name;
-    const datasets = [String(a[cfg.dataset_arg || "dataset"] ?? tool)];
+    const prof = cfg.commit && cfg.commit[tool];
+    const datasets = [String(a[cfg.dataset_arg || "dataset"] ?? (prof && prof.dataset) ?? tool)];
     const log = logFor(customer);
     // What was delivered, as data: structured content if the server gives it, else a single JSON text block parsed.
     let body = msg.result.structuredContent;
     if (body === undefined) { const t = (msg.result.content || []).filter(x => x.type === "text"); try { body = t.length === 1 ? JSON.parse(t[0].text) : msg.result.content; } catch { body = msg.result.content; } }
     const closed = (cfg.witnesses || []).length > 0 && cfg.fail !== "open";
-    const d = await serial(customer, () => log.deliverFull({ tool, datasets, body, requireWitness: closed }));
+    let com = null;
+    if (prof) { try { com = commitRows(body, prof); } catch (e) { return { jsonrpc: "2.0", id: msg.id, error: { code: -32000, message: "delivery not sent: " + e.message } }; } }
+    const d = await serial(customer, () => log.deliverFull({ tool, datasets, body, requireWitness: closed, commitment: com && com.commitment, commitmentSalt: com && com.salt }));
     if (closed && !d.witnessed)
       return { jsonrpc: "2.0", id: msg.id, error: { code: -32000, message: "delivery not witnessed; the vendor's gateway is set to hold data until it is" } };
-    const stampV = { delivery: d.id, log: log.logFp, seq: d.seq, witnessed: d.witnessed };
+    const stampV = { delivery: d.id, log: log.logFp, seq: d.seq, witnessed: d.witnessed, ...(com ? { commitment_salt: saltToText(com.salt) } : {}) };
     const result = { ...msg.result, _meta: { ...(msg.result._meta || {}), [NS]: stampV } };
-    if (cfg.id_in_content !== false && Array.isArray(result.content)) result.content = [...result.content, { type: "text", text: JSON.stringify({ delivery: d.id }) }];
+    if (cfg.id_in_content !== false && Array.isArray(result.content)) result.content = [...result.content, { type: "text", text: JSON.stringify(com ? { delivery: d.id, commitment_salt: saltToText(com.salt) } : { delivery: d.id }) }];
     return { ...msg, result };
   }
   const hopHeaders = new Set(["host", "content-length", "connection", "transfer-encoding", "keep-alive"]);

@@ -1,7 +1,7 @@
 {
   "name": "hive-recorder",
   "displayName": "Hive Recorder",
-  "version": "1.5.0",
+  "version": "2.0.0",
   "description": "Signs a tamper-evident record of every Claude Code tool call, prompt and turn on your machine, so someone else can check later what the agent did. Keeps keyed fingerprints, never content. Signs an optional admission and flags calls outside it. Never blocks a tool call.",
   "author": { "name": "Hive", "email": "steve@thehiveryiq.com", "url": "https://thehiveryiq.com" },
   "homepage": "https://thehiveryiq.com/claude-code/",

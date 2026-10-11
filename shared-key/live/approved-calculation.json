@@ -1,0 +1,56 @@
+{
+ "kind": "hive.approved-calculation/1",
+ "name": "Par-weighted average spread to benchmark",
+ "formula": "R = round half up of sum(w_i * (y_i - b_i)) / sum(w_i), with y and b in thousandths of a percent (tenths of a basis point) and w the par held",
+ "n": 8,
+ "output": {
+  "signal": 3,
+  "unit": "bp",
+  "scale": 10,
+  "decimals": 1
+ },
+ "public_signals": [
+  "Cy",
+  "Cb",
+  "Cw",
+  "R"
+ ],
+ "commitment_scheme": "hive.poseidon-commit/1",
+ "inputs": {
+  "Cy": {
+   "from": "vendor delivery",
+   "vendor": "market-data",
+   "tool": "get_bond_evaluations",
+   "dataset": "bonds.evaluated-pricing",
+   "rows": "rows",
+   "id": "cusip",
+   "value": "yield_pct",
+   "scale": 1000
+  },
+  "Cb": {
+   "from": "vendor delivery",
+   "vendor": "market-data",
+   "tool": "get_benchmark_yields",
+   "dataset": "bonds.benchmark-yields",
+   "rows": "rows",
+   "id": "cusip",
+   "value": "benchmark_yield_pct",
+   "scale": 1000
+  },
+  "Cw": {
+   "from": "firm commitment",
+   "kind": "hive.portfolio-commitment/1",
+   "value": "par_thousands",
+   "logged": "before the first delivery used"
+  }
+ },
+ "proof_system": "PLONK over BN254 (snarkjs 0.7.5); circuit compiled with circom 2.2.2 and circomlib 2.0.5",
+ "setup": {
+  "file": "ppot_0080_14.ptau",
+  "from": "Perpetual Powers of Tau, Privacy and Scaling Explorations",
+  "url": "https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_14.ptau",
+  "sha256": "3ca1149e9349b22b0ee0649399cfb787677129b7b1189d1899fc0d615d9583db"
+ },
+ "circuit_sha256": "b19088fd2dcae431a3b6d889989f856c244dd95443386cdc919dd7e5fb9aa9e0",
+ "verification_key_sha256": "de52f96a911c1824029c16a987be21f48f62215a234f1ecd11f8b417c4839663"
+}

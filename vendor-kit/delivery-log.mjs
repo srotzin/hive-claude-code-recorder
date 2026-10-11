@@ -27,15 +27,15 @@ export function openDeliveryLog(o) {
     pub, logFp,
     async deliver(d) { return (await this.deliverFull(d)).id; },
     // Same, and says how many witnesses countersigned before it returned, so a gateway can hold the data.
-    async deliverFull({ tool, datasets, body, requireWitness }) {
+    async deliverFull({ tool, datasets, body, requireWitness, commitment, commitmentSalt }) {
       const lines = readLines(o.file), last = lines[lines.length - 1];
       const id = newDeliveryId();
       const b = { v: DELIVERY_FORMAT, seq: lines.length, prev: last ? last.hash : "0".repeat(64), t: new Date().toISOString(),
-        vendor: o.vendor, customer: o.customer, log: logFp, tool, datasets: [...datasets].sort(), delivery_fp: sha(id), body_sha256: sha(canon(body)) };
+        vendor: o.vendor, customer: o.customer, log: logFp, tool, datasets: [...datasets].sort(), delivery_fp: sha(id), body_sha256: sha(canon(body)), ...(commitment ? { commitment } : {}) };
       const line = { ...b, hash: sha(canon(b)), sig: crypto.sign(null, Buffer.from(canon(b)), sk).toString("base64url") };
       const keep = () => {
         fs.appendFileSync(o.file, JSON.stringify(line) + "\n");
-        fs.appendFileSync(o.file.replace(/\.jsonl$/, ".private.jsonl"), JSON.stringify({ seq: b.seq, delivery_id: id, body }) + "\n", { mode: 0o600 });
+        fs.appendFileSync(o.file.replace(/\.jsonl$/, ".private.jsonl"), JSON.stringify({ seq: b.seq, delivery_id: id, body, ...(commitment ? { commitment_salt: String(commitmentSalt) } : {}) }) + "\n", { mode: 0o600 });
       };
       // Without requireWitness the line is kept first, as before. With it, the line is kept only once a
       // witness has countersigned it, so a delivery the gateway withheld never enters the log.

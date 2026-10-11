@@ -1,0 +1,10 @@
+{
+ "kind": "hive.portfolio-commitment/1",
+ "customer": "firm-demo-5",
+ "scheme": "hive.poseidon-commit/1",
+ "n": 8,
+ "value": "par_thousands",
+ "commitment": "19115622853918754593493418394619770034104751575660760216756487530038451735444",
+ "for_calculation": "de52f96a911c1824029c16a987be21f48f62215a234f1ecd11f8b417c4839663",
+ "committed_at": "2026-10-11T02:45:25.367Z"
+}

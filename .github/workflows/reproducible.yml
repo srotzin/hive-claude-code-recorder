@@ -1,0 +1,37 @@
+name: reproducible build
+# Anyone can rebuild the shared-key signer and the passport circuits from source and get the same bytes
+# that are committed here. The ceremony record names the signer's sha256, so this ties the live key to this code.
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  signer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust 1.88.0 with the wasm32 target
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --target wasm32-unknown-unknown
+      - name: Build twice, in two different folders, and compare with the committed file
+        run: |
+          set -e
+          want=$(sha256sum shared-key/dist/hive_shared_key.wasm | cut -d' ' -f1)
+          for d in /tmp/a /tmp/b/deeper; do
+            mkdir -p $d && cp -r shared-key $d/ && rm -rf $d/shared-key/dist
+            (cd $d/shared-key && RUSTFLAGS="--remap-path-prefix=$PWD=/build --remap-path-prefix=$HOME/.cargo=/cargo" CARGO_HOME=$HOME/.cargo \
+              cargo +1.88.0 build --release --locked --target wasm32-unknown-unknown)
+            got=$(sha256sum $d/shared-key/target/wasm32-unknown-unknown/release/hive_shared_key.wasm | cut -d' ' -f1)
+            echo "$d: $got"; test "$got" = "$want"
+          done
+          echo "signer reproduces: $want"
+  circuits:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: circom 2.2.2
+        run: |
+          curl -sL -o /usr/local/bin/circom https://github.com/iden3/circom/releases/download/v2.2.2/circom-linux-amd64 && chmod +x /usr/local/bin/circom
+      - name: Rebuild the circuits and PLONK keys, compare the verification keys
+        run: passport/build.sh
+      - name: Check the live passport and its refusal cases, offline
+        run: node tests/passport.mjs
