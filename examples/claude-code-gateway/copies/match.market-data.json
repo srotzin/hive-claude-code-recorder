@@ -1,0 +1,72 @@
+{
+ "v": "hive.delivery-match/1",
+ "vendor": "market-data",
+ "customer": "firm-demo-4",
+ "recorder_key": "IyC-i5liFGbjfJm1zMESe73_tt1vk4BNotjZA94umDY",
+ "period": {
+  "from": "2026-10-11T01:23:25.000Z",
+  "to": "2026-10-11T01:24:49.000Z"
+ },
+ "sessions": [
+  {
+   "session_fp": "0bed4356fc7054b72435a566b296ce29074ee4730a5323bcf1c58952d59534c9",
+   "count": 16,
+   "head": "2f0520ffb4fda242e5a1981ebc482d563ee8f81ec595d697bd8a6b9d454ed8b3"
+  },
+  {
+   "session_fp": "9d7292c97a462dc7c8f6b70ba0fbee975cd4402996b6202c0f0bd2d108a3191f",
+   "count": 14,
+   "head": "a3aa1b0de7a2d5719916e2f98885bf26d4a8383f67edeba5d19b5d07da0a0a1b"
+  }
+ ],
+ "log": {
+  "log_fp": "4e91575d1f95fc94e07aa0037106de47b4a60932b46c0662ab7ac5e1c4d67ab9",
+  "count": 4,
+  "head": "f42b63d9dd5d460788de4a0629075cd7fa2dd3b45478f8742db3a520015e4141"
+ },
+ "matches": [
+  {
+   "session_fp": "0bed4356fc7054b72435a566b296ce29074ee4730a5323bcf1c58952d59534c9",
+   "seq": 9,
+   "delivery_seq": 0,
+   "datasets": [
+    "futures.brent.eod"
+   ]
+  },
+  {
+   "session_fp": "0bed4356fc7054b72435a566b296ce29074ee4730a5323bcf1c58952d59534c9",
+   "seq": 11,
+   "delivery_seq": 1,
+   "datasets": [
+    "futures.wti.eod"
+   ]
+  },
+  {
+   "session_fp": "9d7292c97a462dc7c8f6b70ba0fbee975cd4402996b6202c0f0bd2d108a3191f",
+   "seq": 9,
+   "delivery_seq": 2,
+   "datasets": [
+    "mortgage.loan-level"
+   ]
+  }
+ ],
+ "unrecorded": [
+  {
+   "delivery_seq": 3,
+   "t": "2026-10-11T01:24:23.216Z",
+   "tool": "get_eod",
+   "datasets": [
+    "futures.brent.eod"
+   ]
+  }
+ ],
+ "unmatched": [],
+ "issued_at": "2026-10-11T01:28:37.761Z",
+ "vendor_key": "fzRLBYluTLJaa2DW8T11AaBbIH2OUE8hk8akjX9BNgI",
+ "sig": "RFz1TClxMDeFgeVVKUrKJCgFBxYKLpOFzir6m8CBtdkNRWNoVhgRZH6TTq27TlDTIURkHXLZzXtQbtJ3cy9ODA",
+ "accepted": {
+  "recorder_key": "IyC-i5liFGbjfJm1zMESe73_tt1vk4BNotjZA94umDY",
+  "accepted_at": "2026-10-11T01:28:37.807Z",
+  "sig": "6B6ZBQvXcJo7wRLMGCPlQOQSgeAv21mBk7pNtP9JYa4FU1WGGDLwzk7nLDJwBdWavnfAxbOzn9tzlhsmwqtqAw"
+ }
+}

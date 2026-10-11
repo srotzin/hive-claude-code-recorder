@@ -1,0 +1,18 @@
+{
+ "note": "Stand-in cosigners. Hive ran them for this demo, on a different machine from the witness, with keys the witness never held. In use, ICE and the firm each run vendor-kit/cosigner.mjs with their own key.",
+ "origin": "witness.thehiveryiq.com/log",
+ "log_key": "FCHk4lQ-PvNo2cxkUoL0VlGuKdU6DiK-vPraAR7gyHE",
+ "quorum": 2,
+ "cosigners": [
+  {
+   "name": "ice-standin.thehiveryiq.com/cosigner",
+   "key": "O2Y-MJxMaNvOMLGCezWaIPt0diUmIAkJn8_AfabvOqo",
+   "stands_in_for": "ICE"
+  },
+  {
+   "name": "firm-standin.thehiveryiq.com/cosigner",
+   "key": "H0IKgSzUtuAA-CrTRW8N81Z5w2AjxYWzOn07gYw9iw0",
+   "stands_in_for": "the firm"
+  }
+ ]
+}

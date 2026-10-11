@@ -260,13 +260,43 @@ A recorder that finds a delivery id in a vendor result adds `delivery_fp` to tha
 
 Check steps, in order: `FORMAT`, `SIGNATURE`, `RECORD` (each copy against the witness), `DELIVERIES` (the vendor log's chain, signatures and witness memory, with the last delivery witnessed), `COMPLETE`, `MATCH` (rebuilt from both logs), `ACCEPTED`. The derived-figure check adds `ANSWER` and `BODY` (the vendor's kept body must match its signed line).
 
+## Public log, cosigning, SCITT receipts and the gateway (1.5)
+
+### The witness's public log
+
+Every statement the witness signs, and the registration policy, is a leaf in one append-only Merkle tree (RFC 9162, SHA-256; leaf hash `SHA-256(0x00 || entry)`, node hash `SHA-256(0x01 || left || right)`). The entry for a statement is the canonical JSON of the statement. The witness never signs a statement it has not first added to the tree, in one transaction.
+
+- `GET /v1/witness/log/head[?tree_size=n]`: `hive.witness-tree-head/1` `{ v, origin, tree_size, root_hash, timestamp, witness_key, sig }`, Ed25519 over the canonical head without `sig`.
+- `GET /v1/witness/log/checkpoint[?tree_size=n]`: the same tree as a signed note in the c2sp.org/tlog-checkpoint format (origin line, size, base64 root, then signature lines), with any cosignatures it has.
+- `GET /v1/witness/log/proofs?recorder_key&session_fp`: every leaf the log holds for that session, with inclusion paths, against one signed head.
+- `GET /v1/witness/log/inclusion?index&tree_size`, `GET /v1/witness/log/consistency?first&second` (`&format=cose` returns an RFC 9942 receipt), `GET /v1/witness/log/entries?start&end`.
+- `GET|POST /v1/witness/log/cosignatures`: cosignatures in the c2sp.org/tlog-cosignature format (`cosignature/v1`, Ed25519, key id = first 4 bytes of `SHA-256(name || 0x0A || 0x04 || key)`). A posted cosignature is kept only if it verifies.
+
+Check steps: `HEAD` (the head's signature), `LOGGED` (every statement the witness remembers for a session is a leaf, and every leaf for the session is a statement the witness remembers), `INCLUDED` (each inclusion path rebuilds the head's root), `SPLIT` (two heads signed by the same key, where the consistency path does not show the smaller tree is a prefix of the larger), `ENTRIES`, `ROOT`, `HIDDEN`, `UNLOGGED` (a monitor rebuilding the whole tree from its entries), `CHECKPOINT` and `COSIGNED` (a quorum of named cosigners).
+
+### Cosigners
+
+A cosigner (`vendor-kit/cosigner.mjs`) keeps the last tree it signed. Before it signs a larger tree it fetches a consistency proof from the tree it last signed and refuses if the proof fails. Two parties that each run one, a vendor and a firm, each with their own key, can then hold the witness to one history: a log that shows one of them a different tree cannot get both cosignatures on it.
+
+### SCITT
+
+The witness is a SCITT Transparency Service (RFC 9943) over SCRAPI (draft-ietf-scitt-scrapi-11). `POST /entries` takes a COSE_Sign1 Signed Statement (`alg` EdDSA, `kid` = the issuer's public key, CWT claims `iss` and `sub` in header 15) and returns `201` with `Location: /entries/{n}` and the receipt. `GET /entries/{n}` returns the receipt, `GET /.well-known/scitt-keys` the log key as a COSE_KeySet. Receipts are RFC 9942: protected header `vds` (395) = 1 (RFC9162_SHA256), unprotected `vdp` (396) with inclusion proofs (-1) as `bstr .cbor [tree_size, leaf_index, [+ bstr]]`, detached payload = the root. A Transparent Statement is the Signed Statement with its receipt in unprotected header 394. The registration policy is itself a Signed Statement in the log. Check step: `RECEIPT`.
+
+### The gateway
+
+`vendor-kit/mcp-gateway.mjs` sits in front of a vendor's MCP server over Streamable HTTP and needs no code in that server. It passes every message through unchanged except a successful `tools/call` result, to which it adds `result._meta["com.thehiveryiq/delivery"] = { delivery, log, seq, witnessed }` and one text content block `{"delivery":"dl-..."}`. MCP clients may not hand `_meta` to hooks (Claude Code 2.1.296 does not), so the content block is the one a recorder can rely on. It handles JSON and SSE responses, one delivery at a time per customer log. With witnesses configured and `fail` not `open`, a delivery no witness countersigned is not written to the log and the data is not sent; the client gets a JSON-RPC error.
+
+### Derived figures across deliveries
+
+`checkDerived` lists, for each figure in the answer that no delivery states outright, every operation it matches: within one delivery's rows, `sum`, `average` and `share` (one row over the field's total, as a percentage); between any two delivered values before the answer, in one delivery or two, `difference`, `ratio` and `percent change`. A figure matches when the operation's value rounds to it at the number of decimals the answer shows. `share` and the pair operations need at least 3 significant digits.
+
 ## Limits
 
 - The record is only as complete as the runtime's hooks. Events the runtime does not report are not recorded.
 - Someone holding the recorder key can write a new, consistent record from scratch. Witness statements catch that for every line they cover, and with witnessing before every call that is every line. In plugin mode the keys sit on the agent's machine. In service mode they don't.
 - A witness without memory keeps nothing, so its statements travel with the record. A checker that requires them (`--strict`) fails a record handed over without them. A record fully rebuilt later, with fresh statements and fresh times, has to carry the time it was really rebuilt: the public timestamps' times must sit within the lag of each covered line. It is caught by anyone who knows when the session really ran, or by a witness that remembers what it signed.
 - The recorder clock is the machine's clock. The witness clock is the witness's. A timestamp authority's clock is its own, and is the only one no party to the session controls.
-- When Hive runs the witness, Hive holds the witness key. It is a second party to the customer, not an independent auditor. An organization can run its own witness from `witness/server.mjs`, or use one run by an auditor.
+- When Hive runs the witness, Hive holds the witness key. It is a second party to the customer, not an independent auditor. The public log and outside cosigners make it accountable: it cannot show two parties different histories without one of them catching it. They do not make it independent, and the cosigners are only as independent as whoever holds their keys. An organization can run its own witness from `witness/server.mjs`, or use one run by an auditor.
 - Every line is signed with Ed25519. The ML-DSA-65 signature is optional. The witness signs with Ed25519 only.
 - The scope check only sees what the tool input names. A Bash command that reads a file is not read for paths, and a host reached by a program the agent starts, or through a variable, is not seen. Covering that takes a recorder on the network boundary that writes the same records.
 - The admission says what the session was allowed to touch. It is only as good as whoever wrote it, and nothing in the record shows that the policy was right.

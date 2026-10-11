@@ -1,0 +1,15 @@
+{
+ "port": 8815,
+ "upstream": "http://127.0.0.1:8841/mcp",
+ "vendor": "market-data",
+ "key": "<vendor key, held by the vendor>",
+ "logs": "<vendor log directory>",
+ "witnesses": [
+  "https://witness.thehiveryiq.com/v1/witness"
+ ],
+ "customers": {
+  "785f5b9205ad64fe7d9a9eca8b836281edada72ecabd2e285a51446a455046be": "firm-demo-4"
+ },
+ "dataset_arg": "dataset",
+ "fail": "closed"
+}

@@ -1,0 +1,6 @@
+PASS checkpoint signed by the log key  size 77
+PASS checkpoint cosigned by both outside cosigners  firm-standin.thehiveryiq.com/cosigner, ice-standin.thehiveryiq.com/cosigner
+PASS Signed Statement verifies with its issuer key (pycose)  iss=market-data stand-in vendor
+PASS receipt is RFC 9942 with vds RFC9162_SHA256
+PASS receipt verifies over the root rebuilt from the entry (pycose)  leaf 76 of 77
+PASS receipt tree and checkpoint tree are the same

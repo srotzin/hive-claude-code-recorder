@@ -1,0 +1,21 @@
+ok   the match holds: 3 matched, 1 delivered with no record, 0 recorded with no delivery
+ok   every delivery the gateway logged was witnessed before it went out  4 of 4
+ok   computed figures traced: spread, ratio, percent change, sum, share  4.77 difference, 1.06 ratio, 2.71 percent change, 1260000 sum, 20.16 share
+ok   session 90fec8ad: every witness statement proves into the public log  6 statements
+ok   session b79ca71f: every witness statement proves into the public log  5 statements
+ok   the vendor's delivery log: every witness statement proves into the public log  4 statements
+ok   the latest cosigned checkpoint carries both outside cosignatures  size 77
+ok   the match, registered as a SCITT Signed Statement, has a valid RFC 9942 receipt  leaf 76 of 77
+ok   the registered statement is this exact match
+ok   the receipt's tree is a prefix of the cosigned tree  77 -> 77
+ok   tamper ratio-changed-in-answer -> ANSWER  this answer is not the one recorded at the end of any turn in this record
+ok   tamper prior-settle-changed-in-kept-body -> BODY  the vendor's copy of delivery 0 does not match what its log says it delivered
+ok   tamper statement-hidden-from-log -> LOGGED  statement 1 (line 5) is remembered by the witness but is not in its public log
+ok   tamper witness-answer-drops-a-line -> LOGGED  the public log holds 1 statement for this session that the witness's answer left out
+ok   tamper cosignature-removed -> COSIGNED  the checkpoint carries 1 of the 2 outside cosignatures required
+ok   tamper registered-match-edited -> RECEIPT  the receipt's signature does not verify over the root this entry proves to
+ok   tamper history-rewritten-before-36 -> SPLIT  the tree at size 77 does not extend the tree at size 36; both heads are signed by the witness
+ok   tamper delivery-erased-from-gateway-log -> DELIVERIES  WITNESS, the witness saw 4 deliveries in this log, and this copy has only 3
+ok   tamper outside-pull-hidden-from-match -> MATCH  the match's unrecorded does not agree with the two logs
+
+19 of 19 checks passed.

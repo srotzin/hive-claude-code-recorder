@@ -25,24 +25,33 @@ export function openDeliveryLog(o) {
   const logFp = sha(o.log);
   return {
     pub, logFp,
-    async deliver({ tool, datasets, body }) {
+    async deliver(d) { return (await this.deliverFull(d)).id; },
+    // Same, and says how many witnesses countersigned before it returned, so a gateway can hold the data.
+    async deliverFull({ tool, datasets, body, requireWitness }) {
       const lines = readLines(o.file), last = lines[lines.length - 1];
       const id = newDeliveryId();
       const b = { v: DELIVERY_FORMAT, seq: lines.length, prev: last ? last.hash : "0".repeat(64), t: new Date().toISOString(),
         vendor: o.vendor, customer: o.customer, log: logFp, tool, datasets: [...datasets].sort(), delivery_fp: sha(id), body_sha256: sha(canon(body)) };
       const line = { ...b, hash: sha(canon(b)), sig: crypto.sign(null, Buffer.from(canon(b)), sk).toString("base64url") };
-      fs.appendFileSync(o.file, JSON.stringify(line) + "\n");
-      fs.appendFileSync(o.file.replace(/\.jsonl$/, ".private.jsonl"), JSON.stringify({ seq: b.seq, delivery_id: id, body }) + "\n", { mode: 0o600 });
+      const keep = () => {
+        fs.appendFileSync(o.file, JSON.stringify(line) + "\n");
+        fs.appendFileSync(o.file.replace(/\.jsonl$/, ".private.jsonl"), JSON.stringify({ seq: b.seq, delivery_id: id, body }) + "\n", { mode: 0o600 });
+      };
+      // Without requireWitness the line is kept first, as before. With it, the line is kept only once a
+      // witness has countersigned it, so a delivery the gateway withheld never enters the log.
+      if (!requireWitness) keep();
       const req = { count: b.seq + 1, head: line.hash, recorder_key: pub, session_fp: logFp };
       const req_sig = crypto.sign(null, Buffer.from(canon(req)), sk).toString("base64url");
+      let witnessed = 0;
       await Promise.all((o.witnesses || []).map(async url => {
         try {
           const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...req, req_sig }), signal: AbortSignal.timeout(o.timeoutMs || 8000) });
-          if (r.ok) fs.appendFileSync(o.file.replace(/\.jsonl$/, ".witness.jsonl"), JSON.stringify(await r.json()) + "\n");
+          if (r.ok) { fs.appendFileSync(o.file.replace(/\.jsonl$/, ".witness.jsonl"), JSON.stringify(await r.json()) + "\n"); witnessed++; }
           else fs.appendFileSync(o.file + ".errors.log", new Date().toISOString() + " witness HTTP " + r.status + "\n");
         } catch (e) { fs.appendFileSync(o.file + ".errors.log", new Date().toISOString() + " witness " + e.message + "\n"); }
       }));
-      return id;
+      if (requireWitness) { if (!witnessed) return { id: null, seq: b.seq, witnessed: 0 }; keep(); }
+      return { id, seq: b.seq, witnessed };
     },
   };
 }

@@ -516,6 +516,14 @@ export function checkMatch(m, discs, vlog, c, opts = {}) {
 }
 // Figures an answer computed from a vendor's data. The vendor holds what it delivered (vpriv: [{ seq, delivery_id, body }]),
 // so given the answer, it can tell which figures it repeats and which it derived: a sum or an average of a field.
+// Figures an answer computed from a vendor's data. The vendor holds what it delivered (vpriv: [{ seq, delivery_id, body }]),
+// so given the answer, it can tell which figures it repeats and which it derived:
+//   within one delivery's rows: the sum, the average, or one row's share of a field's total;
+//   between any two delivered values (in one delivery or across deliveries before the answer):
+//   the difference, the ratio, or the percentage change.
+// A figure matches an operation when the operation's value rounds to the figure at the precision the
+// answer shows it. Pair operations need a figure with at least 3 significant digits, so that small
+// round numbers do not match by chance; every operation a figure matches is listed.
 export function checkDerived(lines, text, vlog, vpriv, vendor, c) {
   const a = checkAnswer(lines, text, c);
   if (!a.ok) return { ok: false, step: "ANSWER", why: a.why };
@@ -523,23 +531,41 @@ export function checkDerived(lines, text, vlog, vpriv, vendor, c) {
   // Every pull of this vendor's data before the answer, not only the ones the firm's trail names:
   // a figure the agent computed can come from a result whose own figures the answer never repeats.
   const before = lines.filter(l => !l.redacted && l.answer && l.seq < a.stop_seq).reduce((x, l) => Math.max(x, l.seq), -1);
-  const nums = numbersIn(text), direct = [], derived = [], seen = new Set();
+  const nums = numbersIn(text), direct = [], derived = [], seen = new Set(), values = [], inAny = new Set();
   for (const mt of matches) {
     if (!(mt.seq > before && mt.seq < a.stop_seq)) continue;
     const d = vlog[mt.delivery_seq], p = (vpriv || []).find(x => x.seq === mt.delivery_seq);
-    if (!p || c.sha256hex(p.delivery_id) !== d.delivery_fp || c.sha256hex(canon(p.body)) !== d.body_sha256) return { ok: false, step: "BODY", why: "the vendor's copy of delivery " + mt.delivery_seq + " is not the one its log signed" };
+    if (!p || c.sha256hex(p.delivery_id) !== d.delivery_fp || c.sha256hex(canon(p.body)) !== d.body_sha256) return { ok: false, step: "BODY", why: "the vendor's copy of delivery " + mt.delivery_seq + " does not match what its log says it delivered" };
     const inBody = new Set(numbersIn(canon(p.body)));
+    for (const n of inBody) inAny.add(n);
     const fields = {};
     const walk = v => { if (Array.isArray(v)) { for (const o of v) if (o && typeof o === "object" && !Array.isArray(o)) for (const [k, x] of Object.entries(o)) if (typeof x === "number") (fields[k] = fields[k] || []).push(x); v.forEach(walk); } else if (v && typeof v === "object") Object.values(v).forEach(walk); };
     walk(p.body);
+    const scalars = (v, pre) => { if (v && typeof v === "object" && !Array.isArray(v)) for (const [k, x] of Object.entries(v)) { if (typeof x === "number") values.push({ v: x, field: pre + k, delivery_seq: mt.delivery_seq, seq: mt.seq }); else if (x && typeof x === "object" && !Array.isArray(x)) scalars(x, pre + k + "."); } };
+    scalars(p.body, "");
+    for (const [k, xs] of Object.entries(fields)) xs.forEach((x, i) => values.push({ v: x, field: k + "[" + i + "]", delivery_seq: mt.delivery_seq, seq: mt.seq, rows: xs }));
     for (const n of nums) {
       if (inBody.has(n) && !seen.has("d" + mt.delivery_seq + n)) { seen.add("d" + mt.delivery_seq + n); direct.push({ figure: n, delivery_seq: mt.delivery_seq, seq: mt.seq }); }
       for (const [k, xs] of Object.entries(fields)) {
         if (xs.length < 2) continue;
         const sum = xs.reduce((s, x) => s + x, 0);
-        for (const [op, v] of [["sum", sum], ["average", sum / xs.length]]) if (String(Math.round(v * 1e6) / 1e6) === n) derived.push({ figure: n, op, field: k, n: xs.length, delivery_seq: mt.delivery_seq, seq: mt.seq });
+        for (const [op, v] of [["sum", sum], ["average", sum / xs.length]]) if (shows(n, v)) derived.push({ figure: n, op, field: k, n: xs.length, delivery_seq: mt.delivery_seq, seq: mt.seq });
+        if (sig3(n)) xs.forEach((x, i) => { if (shows(n, x / sum * 100)) derived.push({ figure: n, op: "share", of: k + "[" + i + "]", field: k, n: xs.length, delivery_seq: mt.delivery_seq, seq: mt.seq }); });
       }
+    }
+  }
+  for (const n of nums) {
+    if (inAny.has(n) || !sig3(n)) continue;
+    for (const x of values) for (const y of values) {
+      if (x === y || x.v === y.v || y.v === 0) continue;
+      const ref = { a: { field: x.field, delivery_seq: x.delivery_seq }, b: { field: y.field, delivery_seq: y.delivery_seq }, delivery_seq: x.delivery_seq, seq: x.seq };
+      if (x.v > y.v && shows(n, x.v - y.v)) derived.push({ figure: n, op: "difference", ...ref });
+      if (shows(n, x.v / y.v)) derived.push({ figure: n, op: "ratio", ...ref });
+      if (shows(n, (x.v - y.v) / y.v * 100) || shows(n, Math.abs((x.v - y.v) / y.v * 100))) derived.push({ figure: n, op: "percent change", ...ref });
     }
   }
   return { ok: true, stop_seq: a.stop_seq, direct, derived };
 }
+// Does the answer's figure n (a string) show v at the precision it is written?
+function shows(n, v) { if (!Number.isFinite(v)) return false; const d = (String(n).split(".")[1] || "").length; return Math.abs(Number(n) - v) <= 0.5 * 10 ** -d + 1e-9 * Math.max(1, Math.abs(v)); }
+function sig3(n) { return String(n).replace(/^-/, "").replace(".", "").replace(/^0+/, "").length >= 3; }

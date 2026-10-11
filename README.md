@@ -110,9 +110,20 @@ A firm's record shows what its agent pulled. A vendor's server log shows what it
 - **The vendor's delivery log.** `vendor-kit/delivery-log.mjs` is a small library for a data vendor's server. Each delivery is signed with the vendor's key, chained to the one before it, and its head is sent to the witness before the data goes out. The delivery carries a random id back to the customer inside the result. The vendor keeps what it delivered in a private side file. Only the vendor key, a hash of the log name, a count and a head hash reach the witness.
 - **The firm's side.** When a vendor result carries a delivery id, the recorder keeps a fingerprint of it on the result line (`delivery_fp`).
 - **The match.** `node statement.mjs match --vendor market-data --log deliveries.jsonl --vendor-key-pem vendor.pem --from ... --to ... --out match.json copy-1.jsonl copy-2.jsonl` pairs every delivery with a result line. It lists deliveries the firm's recorder never saw, and result lines the vendor never served. The vendor signs it; `match-accept` lets the firm countersign. `checkMatch` rebuilds it from both logs, checks both against the witness, and fails if the witness saw a session in the period that the match leaves out.
-- **Derived figures.** The vendor holds what it delivered, so given the answer, `checkDerived` tells which figures the answer repeats and which it computed: a sum or an average of a delivered field.
+- **Derived figures.** The vendor holds what it delivered, so given the answer, `checkDerived` tells which figures the answer repeats and which it computed: a sum, an average or a share of a delivered field, or a difference, ratio or percentage change between two delivered values, across deliveries. See 1.5.
 
 `HIVE_TEST_PG=postgres://... node tests/deliveries.mjs` runs 16 checks with a real witness and Postgres. `examples/claude-code-deliveries/` holds two real Claude Code sessions and one pull made straight from the vendor, outside the agent. `node tests/delivery-tamper.mjs <vendor-key.pem>` checks it against the live witness, with 9 rewrites, all rejected.
+
+## A public log, outside cosigners, standard receipts and a gateway (1.5)
+
+The witness is run by Hive, so a reasonable question is who checks the witness. 1.5 answers it four ways.
+
+- **A public log.** Every statement the witness signs is a leaf in one append-only Merkle tree (RFC 9162). Anyone can fetch a signed tree head, prove a session's statements are in it, and prove a later tree extends an earlier one. If the witness showed a vendor and a firm different histories, the two heads it signed are the evidence. `log-check.mjs` has the checks; a monitor can rebuild the whole tree from its entries.
+- **Outside cosigners.** `vendor-kit/cosigner.mjs` lets a vendor and a firm each cosign the log's checkpoint (c2sp.org/tlog-checkpoint and tlog-cosignature) with their own key, only after proving the new tree extends the last one they signed. A checker can require both.
+- **SCITT receipts.** The witness is a SCITT Transparency Service (RFC 9943), with SCRAPI registration and RFC 9942 COSE receipts. `vendor-kit/scitt-register.mjs` registers any signed JSON document, such as a delivery match, and writes the Transparent Statement. Other SCITT tooling can check the receipt; `examples/claude-code-gateway/check_independent.py` does it in Python with pycose, sharing no code with this repository.
+- **A gateway with no vendor code.** `vendor-kit/mcp-gateway.mjs` sits in front of any MCP server over Streamable HTTP. It logs, signs and witnesses each delivery and adds the delivery id to the result, under `_meta` and as one text block. Claude Code 2.1.296 does not pass `_meta` to hooks, so the text block is what the recorder reads.
+
+`node tests/log.mjs` runs 24 checks on the log, `node tests/gateway.mjs` 12 on the gateway in JSON and SSE modes, `node tests/derived.mjs` 6 on the precision rules. `examples/claude-code-gateway/` is two real Claude Code sessions over HTTP through the gateway, against the live witness and its public log; `node tests/gateway-live.mjs` checks it with 9 rewrites, all rejected.
 
 ## Rules it keeps
 
@@ -138,6 +149,6 @@ The record format is `hive.agent-action/1`. The spec is in `spec/SPEC.md` and th
 
 ## Limits
 
-A record proves what the runtime reported, in what order, and that it didn't change afterwards. It does not prove an action was right or authorized, and it can't include events the runtime never reported. In plugin mode the keys sit on the agent's machine; in service mode they don't. The witness keeps nothing yet, so a record rebuilt from scratch later, with every time faked, has to show when it was really rebuilt, because the public timestamps carry a time no party to the session controls. The scope check only sees what a tool's input names: a host reached by a program the agent starts is not seen. Every line is signed with Ed25519; ML-DSA-65 is optional.
+A record proves what the runtime reported, in what order, and that it didn't change afterwards. It does not prove an action was right or authorized, and it can't include events the runtime never reported. In plugin mode the keys sit on the agent's machine; in service mode they don't. The public log and cosigners make Hive's witness accountable; they don't make it independent. A record rebuilt from scratch later, with every time faked, has to show when it was really rebuilt, because the public timestamps carry a time no party to the session controls. The scope check only sees what a tool's input names: a host reached by a program the agent starts is not seen. Every line is signed with Ed25519; ML-DSA-65 is optional.
 
 MIT licensed. Hive, https://thehiveryiq.com

@@ -1,0 +1,3 @@
+The total balance across the 5 rows is **$1,260,000**. The largest loan is L1004 at $254,000, which is **20.16%** of the total.
+
+The tool flagged these rows as stand-in data, not real loan records.

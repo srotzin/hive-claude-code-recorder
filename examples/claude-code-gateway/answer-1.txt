@@ -1,0 +1,7 @@
+Settlements for 2026-10-09 (the tool marks these as stand-in values):
+
+- **Brent:** $84.12 (prior settle $81.90)
+- **WTI:** $79.35 (prior settle $78.60)
+- **Brent − WTI spread:** $4.77
+- **Brent/WTI ratio:** 1.06
+- **Brent change from prior settle:** +2.71%
