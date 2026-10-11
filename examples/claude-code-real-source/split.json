@@ -1,0 +1,23 @@
+{
+ "kind": "hive.derived-split/1",
+ "recorder_key": "IyC-i5liFGbjfJm1zMESe73_tt1vk4BNotjZA94umDY",
+ "session_fp": "8cb34745435aa82f883a4c588371c4eb3079466c294ca6b1cffd76c721c4c034",
+ "session_head": "cecefc78ec5c544ec9b52c590a4eea31c271851bfbc07a37790f28469c06f6d3",
+ "session_count": 15,
+ "answer_fp": "b4e75b7a859527552e15a2e9432d464924ef660244bc617ab8075dfc136d1a93",
+ "figure": "289",
+ "op": "(x - y) in basis points",
+ "inputs": [
+  {
+   "step_seq": 9,
+   "delivery_fp": "b2f7746d8a514dbbcf9cdbea7c27752987ddc20b727933dec0b9ce860f89bd42",
+   "val_fp": "3d27947eb58816bba4b9a315bb5563de6aeccacd037b91db4dfc82618b82f49d"
+  },
+  {
+   "step_seq": 11,
+   "delivery_fp": "3358d0c3fdb4ebe2298c16662a1be522df8c608167275a53236c4d811c60d029",
+   "val_fp": "73a5cd33da8db7a3efe5e9e2d066c472b96cb7c9c1f0d50a37a231c3081d24f4"
+  }
+ ],
+ "note": "Names no vendor and carries no value. Each vendor gets an opening for its own input only."
+}

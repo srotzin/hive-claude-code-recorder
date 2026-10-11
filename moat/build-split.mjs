@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { canon, numbersIn, discloseFor } from "../plugins/hive-recorder/scripts/core.mjs";
 import { c } from "../plugins/hive-recorder/scripts/verify.mjs";
 import { findSplits, splitStatement } from "./split.mjs";
-const E = new URL("../examples/claude-code-cross-vendor/", import.meta.url).pathname;
+const E = new URL("../examples/" + (process.env.HIVE_EXAMPLE || "claude-code-cross-vendor") + "/", import.meta.url).pathname;
 const jl = f => fs.readFileSync(f, "utf8").split("\n").filter(Boolean).map(JSON.parse);
 const lines = jl(E + "firm/session.jsonl"), answer = fs.readFileSync(E + "answer.txt", "utf8");
 const results = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));

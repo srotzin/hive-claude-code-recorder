@@ -13,6 +13,7 @@ import { canon, numbersIn, verifyRecord } from "../plugins/hive-recorder/scripts
 
 export const OPS = {
   "x / y": (x, y) => x / y, "x * y": (x, y) => x * y, "x - y": (x, y) => x - y, "x + y": (x, y) => x + y,
+  "(x - y) in basis points": (x, y) => (x - y) * 100,
 };
 const decimals = s => (String(s).split(".")[1] || "").length;
 const sig = s => String(s).replace(/[^0-9]/g, "").replace(/^0+/, "").length;
