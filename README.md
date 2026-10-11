@@ -83,7 +83,7 @@ Check strictly. A reviewer who wasn't there should always use `--strict`:
 node plugins/hive-recorder/scripts/verify.mjs session.jsonl --key key.json --admission hive-admission.json --witness-key <key> --strict
 ```
 
-A witness started with `DATABASE_URL` remembers every statement it signs. Check against its memory with `--ask-witness`, and a record that was cut short or rebuilt fails even if nobody hands you the statements. Hive's live witness doesn't have memory switched on yet.
+A witness started with `DATABASE_URL` remembers every statement it signs. Check against its memory with `--ask-witness`, and a record that was cut short or rebuilt fails even if nobody hands you the statements. Hive's live witness at witness.thehiveryiq.com has memory switched on, and since 1.5 every statement it signs is also in its public log.
 
 `examples/claude-code-recorderd/` is a real session recorded this way, with 6 tamper cases aimed at these protections.
 
