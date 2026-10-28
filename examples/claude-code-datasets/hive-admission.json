@@ -1,0 +1,21 @@
+{
+  "purpose": "Check yesterday's Brent and WTI settlements for the risk report. Futures end-of-day data only.",
+  "tools": [
+    "Read",
+    "ToolSearch",
+    "mcp__market-data__get_eod",
+    "mcp__market-data__get_records"
+  ],
+  "paths": [
+    "**"
+  ],
+  "hosts": [],
+  "datasets": [
+    "futures.brent.*",
+    "futures.wti.eod"
+  ],
+  "labels": {
+    "sandbox": "market-data-eval-1",
+    "operator": "hive-demo"
+  }
+}

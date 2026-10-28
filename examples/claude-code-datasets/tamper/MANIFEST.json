@@ -1,0 +1,26 @@
+[
+  {
+    "id": "pull-deleted",
+    "file": "pull-deleted.jsonl",
+    "what": "The mortgage pull is deleted and every line re-signed with both of the recorder's own keys. No witness statements are handed over.",
+    "expected": "WITNESS",
+    "got": "WITNESS",
+    "why": "the witness saw 9 lines ending in 4b905f0776bc, and this record no longer has that"
+  },
+  {
+    "id": "pull-relabelled",
+    "file": "pull-relabelled.jsonl",
+    "what": "The mortgage pull is relabelled as a WTI futures pull, inside the admission, and every line re-signed.",
+    "expected": "WITNESS",
+    "got": "WITNESS",
+    "why": "the witness saw 9 lines ending in 4b905f0776bc, and this record no longer has that"
+  },
+  {
+    "id": "end-cut",
+    "file": "end-cut.jsonl",
+    "what": "The record is cut off right after the Brent pull, before the mortgage pull. The signatures are untouched.",
+    "expected": "WITNESS",
+    "got": "WITNESS",
+    "why": "the witness saw 9 lines for this session, and this record has only 8"
+  }
+]

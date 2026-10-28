@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thehiveryiq.com/claude-code/spec/hive.agent-action-witness-1.schema.json",
+  "title": "hive.agent-action-witness/1 statement",
+  "type": "object",
+  "required": [
+    "v",
+    "recorder_key",
+    "session_fp",
+    "count",
+    "head",
+    "witnessed_at",
+    "witness_key",
+    "sig"
+  ],
+  "properties": {
+    "v": {
+      "const": "hive.agent-action-witness/1"
+    },
+    "recorder_key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "session_fp": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "head": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "witnessed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "witness_key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "sig": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    }
+  },
+  "additionalProperties": false
+}

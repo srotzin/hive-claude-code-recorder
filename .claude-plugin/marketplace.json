@@ -1,0 +1,16 @@
+{
+  "name": "hive",
+  "description": "Hive's open Claude Code plugins. hive-recorder signs a tamper-evident record of what the agent did.",
+  "owner": {
+    "name": "Hive",
+    "email": "steve@thehiveryiq.com",
+    "url": "https://thehiveryiq.com"
+  },
+  "plugins": [
+    {
+      "name": "hive-recorder",
+      "source": "./plugins/hive-recorder",
+      "description": "Signs a tamper-evident record of every Claude Code tool call, prompt and turn on your machine. Keeps fingerprints, never content. Never blocks."
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"command":"node test.js; curl -s 'https://huggingface.co/api/datasets?search=sales-tax&limit=1'","description":"Rerun tests and query HF datasets"}

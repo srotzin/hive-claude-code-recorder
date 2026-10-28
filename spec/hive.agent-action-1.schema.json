@@ -1,0 +1,319 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thehiveryiq.com/claude-code/spec/hive.agent-action-1.schema.json",
+  "title": "hive.agent-action/1 line (spec 1.1)",
+  "type": "object",
+  "required": [
+    "v",
+    "seq",
+    "prev",
+    "t",
+    "key",
+    "event",
+    "session",
+    "hash",
+    "sig"
+  ],
+  "properties": {
+    "v": {
+      "const": "hive.agent-action/1"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "prev": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "t": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "event": {
+      "type": "string",
+      "minLength": 1
+    },
+    "session": {
+      "type": "string"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sig": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    },
+    "public_key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "key_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "recorder": {
+      "type": "string"
+    },
+    "tool": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "use_id": {
+          "type": "string"
+        },
+        "mcp_server": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "fp": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "propertyNames": {
+        "enum": [
+          "input",
+          "response",
+          "error",
+          "prompt",
+          "last_message",
+          "event_fields",
+          "purpose"
+        ]
+      }
+    },
+    "bytes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "fp_cwd": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "prompt_id": {
+      "type": "string"
+    },
+    "permission_mode": {
+      "type": "string"
+    },
+    "duration_ms": {
+      "type": "number"
+    },
+    "interrupted": {
+      "type": "boolean"
+    },
+    "agent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      }
+    },
+    "source": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "head": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sig_pq": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "pq_alg": {
+      "const": "ML-DSA-65"
+    },
+    "pq_public_key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{2603}$"
+    },
+    "scope": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "tools",
+            "paths",
+            "hosts"
+          ],
+          "properties": {
+            "tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "hosts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "touched",
+            "outside"
+          ],
+          "properties": {
+            "touched": {
+              "type": "object",
+              "required": [
+                "paths",
+                "hosts"
+              ],
+              "properties": {
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "hosts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "outside": {
+              "type": "object",
+              "required": [
+                "tool",
+                "paths",
+                "hosts"
+              ],
+              "properties": {
+                "tool": {
+                  "type": "boolean"
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "hosts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean"
+        ]
+      }
+    },
+    "fp_purpose": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "policy_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "RecorderKey"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "public_key",
+          "key_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "Seal"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "count",
+          "head"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "Admission"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "scope",
+          "policy_sha256"
+        ]
+      }
+    }
+  ]
+}

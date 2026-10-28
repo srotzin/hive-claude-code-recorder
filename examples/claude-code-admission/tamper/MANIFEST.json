@@ -1,0 +1,98 @@
+[
+  {
+    "id": "escape-deleted",
+    "file": "escape-deleted.jsonl",
+    "what": "The call to huggingface.co and its result are deleted",
+    "expected": "CHAIN_ORDER",
+    "got": "CHAIN_ORDER",
+    "why": "expected seq 8, found 10"
+  },
+  {
+    "id": "escape-host-rewritten",
+    "file": "escape-host-rewritten.jsonl",
+    "what": "The call is edited to say it went to the npm registry",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 8 changed after it was signed"
+  },
+  {
+    "id": "admission-widened",
+    "file": "admission-widened.jsonl",
+    "what": "huggingface.co is added to the admission after the fact",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 1 changed after it was signed"
+  },
+  {
+    "id": "admission-removed",
+    "file": "admission-removed.jsonl",
+    "what": "The admission is deleted, so nothing looks out of scope",
+    "expected": "CHAIN_ORDER",
+    "got": "CHAIN_ORDER",
+    "why": "expected seq 1, found 2"
+  },
+  {
+    "id": "failure-turned-success",
+    "file": "failure-turned-success.jsonl",
+    "what": "The failed call is relabelled as one that worked",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 9 changed after it was signed"
+  },
+  {
+    "id": "pq-signature-removed",
+    "file": "pq-signature-removed.jsonl",
+    "what": "The ML-DSA-65 signature is stripped from the escape line",
+    "expected": "PQ_SIGNATURE",
+    "got": "PQ_SIGNATURE",
+    "why": "line 8 ML-DSA-65 signature is missing or does not verify"
+  },
+  {
+    "id": "pq-signature-swapped",
+    "file": "pq-signature-swapped.jsonl",
+    "what": "The escape line gets another line's ML-DSA-65 signature",
+    "expected": "PQ_SIGNATURE",
+    "got": "PQ_SIGNATURE",
+    "why": "line 8 ML-DSA-65 signature is missing or does not verify"
+  },
+  {
+    "id": "scope-hidden-resigned",
+    "file": "scope-hidden-resigned.jsonl",
+    "what": "The scope check is cleared and the record re-signed with both of the recorder's own keys",
+    "expected": "ADMISSION",
+    "got": "ADMISSION",
+    "why": "line 8 scope check does not match the admission"
+  },
+  {
+    "id": "admission-moved-resigned",
+    "file": "admission-moved-resigned.jsonl",
+    "what": "The admission is moved after the session start and everything re-signed with the recorder's keys",
+    "expected": "ADMISSION",
+    "got": "ADMISSION",
+    "why": "the admission must be line 1, before anything happened, and appear once"
+  },
+  {
+    "id": "escape-deleted-resigned",
+    "file": "escape-deleted-resigned.jsonl",
+    "what": "The escape is deleted and the whole record re-signed with both of the recorder's own keys",
+    "expected": "WITNESS",
+    "got": "WITNESS",
+    "why": "the witness saw 13 lines ending in b28fd7b3b3d1, and this record no longer has that"
+  },
+  {
+    "id": "admission-widened-resigned",
+    "file": "admission-widened-resigned.jsonl",
+    "what": "The admission is widened, the scope check cleared, and everything re-signed with the recorder's keys",
+    "expected": "ADMISSION",
+    "got": "ADMISSION",
+    "why": "the admission's scope is not the scope in the policy you expected"
+  },
+  {
+    "id": "rebuilt-other-key",
+    "file": "rebuilt-other-key.jsonl",
+    "what": "The whole record is rebuilt and signed with a different key",
+    "expected": "KEY_PIN",
+    "got": "KEY_PIN",
+    "why": "record was signed by a key other than the pinned one"
+  }
+]

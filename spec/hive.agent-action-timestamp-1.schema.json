@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thehiveryiq.com/claude-code/spec/hive.agent-action-timestamp-1.schema.json",
+  "title": "hive.agent-action-timestamp/1",
+  "description": "One RFC 3161 timestamp token over a record head. The token's message imprint is SHA-256 with the head's 32 bytes as the hashed message.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "count", "head", "tsa", "token"],
+  "properties": {
+    "v": { "const": "hive.agent-action-timestamp/1" },
+    "count": { "type": "integer", "minimum": 1, "description": "Number of lines covered. The head is the hash of line count-1." },
+    "head": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "tsa": { "type": "string", "format": "uri", "description": "The timestamp authority that issued the token." },
+    "token": { "type": "string", "contentEncoding": "base64", "description": "DER TimeStampResp as returned by the authority." }
+  }
+}

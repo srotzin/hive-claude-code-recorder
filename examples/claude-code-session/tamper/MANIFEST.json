@@ -1,0 +1,98 @@
+[
+  {
+    "id": "denied-call-deleted",
+    "what": "The curl call Claude Code denied is deleted, so it looks like it was never asked for",
+    "file": "denied-call-deleted.jsonl",
+    "expected": "CHAIN_ORDER",
+    "got": "CHAIN_ORDER",
+    "why": "expected seq 9, found 10"
+  },
+  {
+    "id": "denied-call-relabelled",
+    "what": "The denied curl call is relabelled as a harmless Read",
+    "file": "denied-call-relabelled.jsonl",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 9 changed after it was signed"
+  },
+  {
+    "id": "failing-test-hidden",
+    "what": "The first test run's output fingerprint is swapped for the passing run's",
+    "file": "failing-test-hidden.jsonl",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 4 changed after it was signed"
+  },
+  {
+    "id": "edit-time-moved",
+    "what": "The code edit's time is moved a day earlier",
+    "file": "edit-time-moved.jsonl",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 6 changed after it was signed"
+  },
+  {
+    "id": "edit-and-test-swapped",
+    "what": "The edit and the first test run swap places",
+    "file": "edit-and-test-swapped.jsonl",
+    "expected": "CHAIN_ORDER",
+    "got": "CHAIN_ORDER",
+    "why": "expected seq 4, found 6"
+  },
+  {
+    "id": "prompt-fingerprint-changed",
+    "what": "The user's prompt fingerprint is replaced",
+    "file": "prompt-fingerprint-changed.jsonl",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 2 changed after it was signed"
+  },
+  {
+    "id": "signature-forged",
+    "what": "One line is re-signed with another key but keeps the original key id",
+    "file": "signature-forged.jsonl",
+    "expected": "SIGNATURE",
+    "got": "SIGNATURE",
+    "why": "line 6 signature does not verify"
+  },
+  {
+    "id": "seal-shortened",
+    "what": "A seal is edited to cover one line fewer",
+    "file": "seal-shortened.jsonl",
+    "expected": "ENTRY_HASH",
+    "got": "ENTRY_HASH",
+    "why": "line 11 changed after it was signed"
+  },
+  {
+    "id": "rebuilt-denied-call-removed",
+    "what": "The whole record is rebuilt and re-signed with the recorder's own key, denied call removed",
+    "file": "rebuilt-denied-call-removed.jsonl",
+    "expected": "WITNESS",
+    "got": "WITNESS",
+    "why": "the witness saw 11 lines ending in 4377626607e4, and this record no longer has that"
+  },
+  {
+    "id": "rebuilt-denied-call-ran",
+    "what": "Rebuilt with the recorder's own key, adding a fake outcome so the denied call looks like it ran",
+    "file": "rebuilt-denied-call-ran.jsonl",
+    "expected": "WITNESS",
+    "got": "WITNESS",
+    "why": "the witness saw 11 lines ending in 4377626607e4, and this record no longer has that"
+  },
+  {
+    "id": "session-end-trimmed",
+    "what": "The session end and last seal are cut off",
+    "file": "session-end-trimmed.jsonl",
+    "expected": "WITNESS",
+    "got": "WITNESS",
+    "why": "the witness saw 13 lines ending in e08d89402ac8, and this record no longer has that"
+  },
+  {
+    "id": "rebuilt-other-key",
+    "what": "The whole record is rebuilt and signed with a different key",
+    "file": "rebuilt-other-key.jsonl",
+    "expected": "KEY_PIN",
+    "got": "KEY_PIN",
+    "why": "record was signed by a key other than the pinned one"
+  }
+]
